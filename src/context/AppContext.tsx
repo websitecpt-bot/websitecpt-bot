@@ -296,12 +296,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     let isMounted = true;
 
-    const mergeById = <T extends { id: string }>(legacy: T[] | undefined, remote: T[] | null, fallback: T[]): T[] => {
-      if (!legacy && remote && remote.length > 0) return remote;
-      if (!legacy) return fallback;
-      if (!remote || remote.length === 0) return legacy;
-      const merged = new Map(remote.map((item) => [item.id, item]));
-      legacy.forEach((item) => merged.set(item.id, item));
+    const mergeById = <T extends { id: string }>(legacy: T[] | undefined, remote: T[] | null | undefined, fallback: T[]): T[] => {
+      if (!legacy && (!remote || remote.length === 0)) return fallback;
+      const merged = new Map<string, T>();
+      (legacy || []).forEach((item) => merged.set(item.id, item));
+      // Supabase is authoritative for matching IDs; device-only legacy records are retained.
+      (remote || []).forEach((item) => merged.set(item.id, item));
+      return Array.from(merged.values());
+    };
+    const mergeCoins = (legacy: MarketCoin[] | undefined, remote: MarketCoin[] | undefined): MarketCoin[] => {
+      const merged = new Map<string, MarketCoin>();
+      (legacy || []).forEach((coin) => merged.set(coin.symbol, coin));
+      (remote || []).forEach((coin) => merged.set(coin.symbol, coin));
       return Array.from(merged.values());
     };
 
@@ -342,28 +348,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const cloud = (cloudState || {}) as Record<string, unknown>;
 
         const hydrated = {
-          users: hasCloudKey('users')
-            ? (cloud.users as User[])
-            : mergeById(readLegacyState<User[]>('users'), cloudUsers, initialUsers),
-          coins: hasCloudKey('coins') ? (cloud.coins as MarketCoin[]) : (readLegacyState<MarketCoin[]>('coins') || initialCoins),
-          trades: hasCloudKey('trades')
-            ? (cloud.trades as Trade[])
-            : mergeById(readLegacyState<Trade[]>('trades'), cloudTrades, initialTrades),
-          tickets: hasCloudKey('tickets')
-            ? (cloud.tickets as SupportTicket[])
-            : mergeById(readLegacyState<SupportTicket[]>('tickets'), cloudTickets, initialSupportTickets),
-          adjustments: hasCloudKey('adjustments')
-            ? (cloud.adjustments as BalanceAdjustment[])
-            : (readLegacyState<BalanceAdjustment[]>('adjustments') || initialBalanceAdjustments),
-          deposits: hasCloudKey('deposits')
-            ? (cloud.deposits as DepositRequest[])
-            : mergeById(readLegacyState<DepositRequest[]>('deposits'), cloudDeposits, initialDepositRequests),
-          withdrawals: hasCloudKey('withdrawals')
-            ? (cloud.withdrawals as WithdrawalRequest[])
-            : mergeById(readLegacyState<WithdrawalRequest[]>('withdrawals'), cloudWithdrawals, initialWithdrawalRequests),
-          audit: hasCloudKey('audit')
-            ? (cloud.audit as AuditLog[])
-            : (readLegacyState<AuditLog[]>('audit') || initialAuditLogs),
+          users: mergeById(readLegacyState<User[]>('users'), hasCloudKey('users') ? (cloud.users as User[]) : cloudUsers, initialUsers),
+          coins: mergeCoins(readLegacyState<MarketCoin[]>('coins'), hasCloudKey('coins') ? (cloud.coins as MarketCoin[]) : (readLegacyState<MarketCoin[]>('coins') ? undefined : initialCoins)),
+          trades: mergeById(readLegacyState<Trade[]>('trades'), hasCloudKey('trades') ? (cloud.trades as Trade[]) : cloudTrades, initialTrades),
+          tickets: mergeById(readLegacyState<SupportTicket[]>('tickets'), hasCloudKey('tickets') ? (cloud.tickets as SupportTicket[]) : cloudTickets, initialSupportTickets),
+          adjustments: mergeById(readLegacyState<BalanceAdjustment[]>('adjustments'), hasCloudKey('adjustments') ? (cloud.adjustments as BalanceAdjustment[]) : undefined, initialBalanceAdjustments),
+          deposits: mergeById(readLegacyState<DepositRequest[]>('deposits'), hasCloudKey('deposits') ? (cloud.deposits as DepositRequest[]) : cloudDeposits, initialDepositRequests),
+          withdrawals: mergeById(readLegacyState<WithdrawalRequest[]>('withdrawals'), hasCloudKey('withdrawals') ? (cloud.withdrawals as WithdrawalRequest[]) : cloudWithdrawals, initialWithdrawalRequests),
+          audit: mergeById(readLegacyState<AuditLog[]>('audit'), hasCloudKey('audit') ? (cloud.audit as AuditLog[]) : undefined, initialAuditLogs),
           settings: hasCloudKey('settings')
             ? (cloud.settings as SystemSettings)
             : (readLegacyState<SystemSettings>('settings') || initialSystemSettings),
@@ -392,7 +384,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const entries: [string, unknown][] = Object.entries(hydrated);
         await Promise.all(entries.map(async ([key, value]) => {
           const serialized = JSON.stringify(value);
-          if (hasCloudKey(key)) {
+          if (hasCloudKey(key) && serialized === JSON.stringify(cloud[key])) {
             cloudStateCache.current[key] = serialized;
             if (typeof window !== 'undefined') window.localStorage.removeItem('cpt_' + key);
             return;

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
   Trade,
@@ -29,6 +29,8 @@ import {
 } from '../data/initialData';
 import {
   isSupabaseConfigured,
+  fetchAppStateFromSupabase,
+  syncAppStateToSupabase,
   fetchUsersFromSupabase,
   fetchTradesFromSupabase,
   fetchTicketsFromSupabase,
@@ -178,27 +180,47 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Persistence loaders
-  const loadState = <T,>(key: string, fallback: T): T => {
+  // Shared platform data is stored in Supabase. Only per-device session state stays in sessionStorage.
+  const loadSessionState = <T,>(key: string, fallback: T): T => {
     try {
-      const saved = localStorage.getItem(`cpt_${key}`);
-      return saved ? JSON.parse(saved) : fallback;
+      if (typeof window === 'undefined') return fallback;
+      const sessionValue = window.sessionStorage.getItem('cpt_' + key);
+      if (sessionValue) return JSON.parse(sessionValue) as T;
+
+      // One-time migration of this device's old session values.
+      const legacyValue = window.localStorage.getItem('cpt_' + key);
+      if (legacyValue) {
+        window.sessionStorage.setItem('cpt_' + key, legacyValue);
+        window.localStorage.removeItem('cpt_' + key);
+        return JSON.parse(legacyValue) as T;
+      }
+      return fallback;
     } catch {
       return fallback;
     }
   };
 
-  const [users, setUsers] = useState<User[]>(() => loadState('users', initialUsers));
-  const [currentUserId, setCurrentUserId] = useState<string>(() => loadState('currentUserId', 'user-827592'));
-  const [coins, setCoins] = useState<MarketCoin[]>(() => loadState('coins', initialCoins));
+  const readLegacyState = <T,>(key: string): T | undefined => {
+    try {
+      if (typeof window === 'undefined') return undefined;
+      const saved = window.localStorage.getItem('cpt_' + key);
+      return saved ? (JSON.parse(saved) as T) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [currentUserId, setCurrentUserId] = useState<string>(() => loadSessionState('currentUserId', 'user-827592'));
+  const [coins, setCoins] = useState<MarketCoin[]>(initialCoins);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC');
-  const [trades, setTrades] = useState<Trade[]>(() => loadState('trades', initialTrades));
-  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => loadState('tickets', initialSupportTickets));
-  const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>(() => loadState('adjustments', initialBalanceAdjustments));
-  const [depositRequests, setDepositRequests] = useState<DepositRequest[]>(() => loadState('deposits', initialDepositRequests));
-  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>(() => loadState('withdrawals', initialWithdrawalRequests));
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadState('audit', initialAuditLogs));
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => loadState('settings', initialSystemSettings));
+  const [trades, setTrades] = useState<Trade[]>(initialTrades);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(initialSupportTickets);
+  const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>(initialBalanceAdjustments);
+  const [depositRequests, setDepositRequests] = useState<DepositRequest[]>(initialDepositRequests);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>(initialWithdrawalRequests);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(initialSystemSettings);
 
   // Navigation & UI state with URL /admin, /login, /register router detection
   const [activeTab, setActiveTab] = useState<'home' | 'market' | 'trade' | 'history' | 'account' | 'admin' | 'login'>(() => {
@@ -218,131 +240,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return 'login';
       }
     }
-    // Default to 'login' page for unauthenticated visitors as requested
-    const savedLogin = loadState('isUserLoggedIn', false);
+    const savedLogin = loadSessionState('isUserLoggedIn', false);
     return savedLogin ? 'home' : 'login';
   });
 
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => loadState('isAdmin', false));
-  const [isUserLoggedIn, setIsUserLoggedIn] = useState<boolean>(() => loadState('isUserLoggedIn', false));
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => loadSessionState('isAdmin', false));
+  const [isUserLoggedIn, setIsUserLoggedIn] = useState<boolean>(() => loadSessionState('isUserLoggedIn', false));
   const adminName = 'Chief Operator (UK)';
 
-  // Automatically listen to /admin, #admin, /login and ?tab=admin URL navigation
+  // Session flags are intentionally device-specific and are never shared between users.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const handleUrlRoutes = () => {
-        const path = window.location.pathname.toLowerCase();
-        const hash = window.location.hash.toLowerCase();
-        const params = new URLSearchParams(window.location.search);
-        if (
-          path.startsWith('/admin') ||
-          hash === '#admin' ||
-          params.get('tab') === 'admin' ||
-          params.get('admin') === 'true'
-        ) {
-          // Open Admin tab and let AdminPanel handle secure Admin authentication
-          setActiveTab('admin');
-        } else if (path.includes('/login') || path.includes('/register')) {
-          setActiveTab('login');
-        } else if (path === '/' && !isUserLoggedIn) {
-          setActiveTab('login');
-        }
-      };
-      handleUrlRoutes();
-      window.addEventListener('hashchange', handleUrlRoutes);
-      window.addEventListener('popstate', handleUrlRoutes);
-      return () => {
-        window.removeEventListener('hashchange', handleUrlRoutes);
-        window.removeEventListener('popstate', handleUrlRoutes);
-      };
-    }
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('cpt_currentUserId', JSON.stringify(currentUserId));
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('cpt_isAdmin', JSON.stringify(isAdmin));
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('cpt_isUserLoggedIn', JSON.stringify(isUserLoggedIn));
   }, [isUserLoggedIn]);
 
   const [isSupportOpen, setIsSupportOpen] = useState(false);
-  const [activeSupportUsers, setActiveSupportUsers] = useState<{ userId: string; userName: string; uid: string; enteredAt: string }[]>(() =>
-    loadState('activeSupportUsers', [
-      { userId: 'user-518294', userName: 'Alex Trader', uid: '518294', enteredAt: 'Live Now' }
-    ])
-  );
+  const [activeSupportUsers, setActiveSupportUsers] = useState<{ userId: string; userName: string; uid: string; enteredAt: string }[]>([
+    { userId: 'user-518294', userName: 'Alex Trader', uid: '518294', enteredAt: 'Live Now' }
+  ]);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [selectedTradeDetails, setSelectedTradeDetails] = useState<Trade | null>(null);
 
-  const safeStorageSet = (key: string, value: any) => {
-    try {
-      localStorage.setItem(`cpt_${key}`, JSON.stringify(value));
-    } catch (err) {
-      console.warn(`[SafeStorage] Quota exceeded or error saving cpt_${key}:`, err);
-    }
-  };
+  const [language, setLanguage] = useState<Language>(() => loadSessionState('language', 'en'));
+  const [marketDataMode, setMarketDataMode] = useState<'live_stream' | 'manual_benchmark'>('live_stream');
 
   useEffect(() => {
-    safeStorageSet('activeSupportUsers', activeSupportUsers);
-  }, [activeSupportUsers]);
-
-  // Sync to localStorage safely
-  useEffect(() => {
-    safeStorageSet('users', users);
-  }, [users]);
-
-  useEffect(() => {
-    safeStorageSet('currentUserId', currentUserId);
-  }, [currentUserId]);
-
-  useEffect(() => {
-    safeStorageSet('coins', coins);
-  }, [coins]);
-
-  useEffect(() => {
-    safeStorageSet('trades', trades);
-  }, [trades]);
-
-  useEffect(() => {
-    safeStorageSet('tickets', supportTickets);
-  }, [supportTickets]);
-
-  useEffect(() => {
-    safeStorageSet('adjustments', balanceAdjustments);
-  }, [balanceAdjustments]);
-
-  useEffect(() => {
-    safeStorageSet('deposits', depositRequests);
-  }, [depositRequests]);
-
-  useEffect(() => {
-    safeStorageSet('withdrawals', withdrawalRequests);
-  }, [withdrawalRequests]);
-
-  useEffect(() => {
-    safeStorageSet('audit', auditLogs);
-  }, [auditLogs]);
-
-  useEffect(() => {
-    safeStorageSet('settings', systemSettings);
-  }, [systemSettings]);
-
-  useEffect(() => {
-    safeStorageSet('isAdmin', isAdmin);
-  }, [isAdmin]);
-
-  useEffect(() => {
-    safeStorageSet('isUserLoggedIn', isUserLoggedIn);
-  }, [isUserLoggedIn]);
-
-  const [language, setLanguage] = useState<Language>(() => loadState('language', 'en'));
-
-  useEffect(() => {
-    safeStorageSet('language', language);
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('cpt_language', JSON.stringify(language));
   }, [language]);
 
-  const [marketDataMode, setMarketDataMode] = useState<'live_stream' | 'manual_benchmark'>(() =>
-    loadState('marketDataMode', 'live_stream')
-  );
-
-  useEffect(() => {
-    safeStorageSet('marketDataMode', marketDataMode);
-  }, [marketDataMode]);
+  const [cloudStateReady, setCloudStateReady] = useState(false);
+  const cloudStateCache = useRef<Record<string, string>>({});
+  const cloudStateLastWrite = useRef<Record<string, number>>({});
 
   const currentUser = users.find((u) => u.id === currentUserId) || users[0];
   const isSuperAdmin =
@@ -351,15 +292,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUser.uid === '100001';
   const activeCoin = coins.find((c) => c.symbol === selectedSymbol) || coins[0];
 
-  // Central Supabase Cloud Sync & Realtime Listener
+  // Load the shared state once, migrate the previous device cache, then listen for cloud updates.
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-
     let isMounted = true;
 
-    const hydrateFromSupabase = async () => {
+    const mergeById = <T extends { id: string }>(legacy: T[] | undefined, remote: T[] | null, fallback: T[]): T[] => {
+      if (!legacy && remote && remote.length > 0) return remote;
+      if (!legacy) return fallback;
+      if (!remote || remote.length === 0) return legacy;
+      const merged = new Map(remote.map((item) => [item.id, item]));
+      legacy.forEach((item) => merged.set(item.id, item));
+      return Array.from(merged.values());
+    };
+
+    const hydrate = async () => {
       try {
-        const [cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals] = await Promise.all([
+        if (!isSupabaseConfigured()) {
+          // Keep any old data visible until the Supabase project is configured.
+          setUsers(readLegacyState<User[]>('users') || initialUsers);
+          setCoins(readLegacyState<MarketCoin[]>('coins') || initialCoins);
+          setTrades(readLegacyState<Trade[]>('trades') || initialTrades);
+          setSupportTickets(readLegacyState<SupportTicket[]>('tickets') || initialSupportTickets);
+          setBalanceAdjustments(readLegacyState<BalanceAdjustment[]>('adjustments') || initialBalanceAdjustments);
+          setDepositRequests(readLegacyState<DepositRequest[]>('deposits') || initialDepositRequests);
+          setWithdrawalRequests(readLegacyState<WithdrawalRequest[]>('withdrawals') || initialWithdrawalRequests);
+          setAuditLogs(readLegacyState<AuditLog[]>('audit') || initialAuditLogs);
+          setSystemSettings(readLegacyState<SystemSettings>('settings') || initialSystemSettings);
+          setActiveSupportUsers(readLegacyState<typeof activeSupportUsers>('activeSupportUsers') || [
+            { userId: 'user-518294', userName: 'Alex Trader', uid: '518294', enteredAt: 'Live Now' }
+          ]);
+          setMarketDataMode(readLegacyState<'live_stream' | 'manual_benchmark'>('marketDataMode') || 'live_stream');
+          if (isMounted) setCloudStateReady(true);
+          console.warn('[Supabase] Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable cloud storage.');
+          return;
+        }
+
+        const [cloudState, cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals] = await Promise.all([
+          fetchAppStateFromSupabase(),
           fetchUsersFromSupabase(),
           fetchTradesFromSupabase(),
           fetchTicketsFromSupabase(),
@@ -368,66 +337,178 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
 
         if (!isMounted) return;
+        const hasCloudKey = (key: string) =>
+          Boolean(cloudState) && Object.prototype.hasOwnProperty.call(cloudState as Record<string, unknown>, key);
+        const cloud = (cloudState || {}) as Record<string, unknown>;
 
-        if (cloudUsers && cloudUsers.length > 0) {
-          setUsers((prev) => {
-            const existingMap = new Map(cloudUsers.map((u) => [u.id, u]));
-            prev.forEach((u) => {
-              if (!existingMap.has(u.id)) existingMap.set(u.id, u);
-            });
-            return Array.from(existingMap.values());
-          });
-        }
-        if (cloudTrades && cloudTrades.length > 0) {
-          setTrades(cloudTrades);
-        }
-        if (cloudTickets && cloudTickets.length > 0) {
-          setSupportTickets(cloudTickets);
-        }
-        if (cloudDeposits && cloudDeposits.length > 0) {
-          setDepositRequests(cloudDeposits);
-        }
-        if (cloudWithdrawals && cloudWithdrawals.length > 0) {
-          setWithdrawalRequests(cloudWithdrawals);
-        }
-      } catch (err) {
-        console.warn('[Supabase Cloud Hydration] notice:', err);
+        const hydrated = {
+          users: hasCloudKey('users')
+            ? (cloud.users as User[])
+            : mergeById(readLegacyState<User[]>('users'), cloudUsers, initialUsers),
+          coins: hasCloudKey('coins') ? (cloud.coins as MarketCoin[]) : (readLegacyState<MarketCoin[]>('coins') || initialCoins),
+          trades: hasCloudKey('trades')
+            ? (cloud.trades as Trade[])
+            : mergeById(readLegacyState<Trade[]>('trades'), cloudTrades, initialTrades),
+          tickets: hasCloudKey('tickets')
+            ? (cloud.tickets as SupportTicket[])
+            : mergeById(readLegacyState<SupportTicket[]>('tickets'), cloudTickets, initialSupportTickets),
+          adjustments: hasCloudKey('adjustments')
+            ? (cloud.adjustments as BalanceAdjustment[])
+            : (readLegacyState<BalanceAdjustment[]>('adjustments') || initialBalanceAdjustments),
+          deposits: hasCloudKey('deposits')
+            ? (cloud.deposits as DepositRequest[])
+            : mergeById(readLegacyState<DepositRequest[]>('deposits'), cloudDeposits, initialDepositRequests),
+          withdrawals: hasCloudKey('withdrawals')
+            ? (cloud.withdrawals as WithdrawalRequest[])
+            : mergeById(readLegacyState<WithdrawalRequest[]>('withdrawals'), cloudWithdrawals, initialWithdrawalRequests),
+          audit: hasCloudKey('audit')
+            ? (cloud.audit as AuditLog[])
+            : (readLegacyState<AuditLog[]>('audit') || initialAuditLogs),
+          settings: hasCloudKey('settings')
+            ? (cloud.settings as SystemSettings)
+            : (readLegacyState<SystemSettings>('settings') || initialSystemSettings),
+          activeSupportUsers: hasCloudKey('activeSupportUsers')
+            ? (cloud.activeSupportUsers as typeof activeSupportUsers)
+            : (readLegacyState<typeof activeSupportUsers>('activeSupportUsers') || [
+                { userId: 'user-518294', userName: 'Alex Trader', uid: '518294', enteredAt: 'Live Now' }
+              ]),
+          marketDataMode: hasCloudKey('marketDataMode')
+            ? (cloud.marketDataMode as 'live_stream' | 'manual_benchmark')
+            : (readLegacyState<'live_stream' | 'manual_benchmark'>('marketDataMode') || 'live_stream'),
+        };
+
+        setUsers(hydrated.users);
+        setCoins(hydrated.coins);
+        setTrades(hydrated.trades);
+        setSupportTickets(hydrated.tickets);
+        setBalanceAdjustments(hydrated.adjustments);
+        setDepositRequests(hydrated.deposits);
+        setWithdrawalRequests(hydrated.withdrawals);
+        setAuditLogs(hydrated.audit);
+        setSystemSettings(hydrated.settings);
+        setActiveSupportUsers(hydrated.activeSupportUsers);
+        setMarketDataMode(hydrated.marketDataMode);
+
+        const entries: [string, unknown][] = Object.entries(hydrated);
+        await Promise.all(entries.map(async ([key, value]) => {
+          const serialized = JSON.stringify(value);
+          if (hasCloudKey(key)) {
+            cloudStateCache.current[key] = serialized;
+            if (typeof window !== 'undefined') window.localStorage.removeItem('cpt_' + key);
+            return;
+          }
+          const saved = await syncAppStateToSupabase(key, value);
+          if (saved) {
+            cloudStateCache.current[key] = serialized;
+            if (typeof window !== 'undefined') window.localStorage.removeItem('cpt_' + key);
+          }
+        }));
+
+        if (isMounted) setCloudStateReady(true);
+      } catch (error) {
+        console.warn('[Supabase Cloud Hydration] notice:', error);
+        if (isMounted) setCloudStateReady(true);
       }
     };
 
-    hydrateFromSupabase();
+    void hydrate();
 
-    // Subscribe to Postgres Realtime changes
-    const channel = subscribeToSupabaseRealtime({
-      onUserUpdate: async () => {
-        const u = await fetchUsersFromSupabase();
-        if (u && isMounted) setUsers(u);
-      },
-      onTradeUpdate: async () => {
-        const t = await fetchTradesFromSupabase();
-        if (t && isMounted) setTrades(t);
-      },
-      onTicketUpdate: async () => {
-        const k = await fetchTicketsFromSupabase();
-        if (k && isMounted) setSupportTickets(k);
-      },
-      onDepositUpdate: async () => {
-        const d = await fetchDepositsFromSupabase();
-        if (d && isMounted) setDepositRequests(d);
-      },
-      onWithdrawalUpdate: async () => {
-        const w = await fetchWithdrawalsFromSupabase();
-        if (w && isMounted) setWithdrawalRequests(w);
-      },
-    });
+    const channel = isSupabaseConfigured()
+      ? subscribeToSupabaseRealtime({
+          onAppStateUpdate: (key, value) => {
+            if (!isMounted || value === undefined || value === null) return;
+            try {
+              cloudStateCache.current[key] = JSON.stringify(value);
+              switch (key) {
+                case 'users': setUsers(value as User[]); break;
+                case 'coins': setCoins(value as MarketCoin[]); break;
+                case 'trades': setTrades(value as Trade[]); break;
+                case 'tickets': setSupportTickets(value as SupportTicket[]); break;
+                case 'adjustments': setBalanceAdjustments(value as BalanceAdjustment[]); break;
+                case 'deposits': setDepositRequests(value as DepositRequest[]); break;
+                case 'withdrawals': setWithdrawalRequests(value as WithdrawalRequest[]); break;
+                case 'audit': setAuditLogs(value as AuditLog[]); break;
+                case 'settings': setSystemSettings(value as SystemSettings); break;
+                case 'activeSupportUsers':
+                  setActiveSupportUsers(value as typeof activeSupportUsers);
+                  break;
+                case 'marketDataMode':
+                  setMarketDataMode(value as 'live_stream' | 'manual_benchmark');
+                  break;
+              }
+            } catch (error) {
+              console.warn('[Supabase Realtime] Could not apply shared state:', error);
+            }
+          },
+        })
+      : null;
 
     return () => {
       isMounted = false;
-      if (channel) {
-        channel.unsubscribe();
-      }
+      if (channel) channel.unsubscribe();
     };
   }, []);
+
+  // Persist shared state to Supabase; no shared app data is written to localStorage.
+  useEffect(() => {
+    if (!cloudStateReady || !isSupabaseConfigured()) return;
+
+    const persist = (key: string, value: unknown) => {
+      let serialized: string;
+      try {
+        serialized = JSON.stringify(value);
+      } catch {
+        return;
+      }
+      if (cloudStateCache.current[key] === serialized) return;
+
+      const now = Date.now();
+      const minInterval = key === 'coins' ? 10000 : 0;
+      const lastWrite = cloudStateLastWrite.current[key] || 0;
+      if (now - lastWrite < minInterval) return;
+      cloudStateLastWrite.current[key] = now;
+
+      void syncAppStateToSupabase(key, value).then((saved) => {
+        if (saved) {
+          cloudStateCache.current[key] = serialized;
+          if (typeof window !== 'undefined') window.localStorage.removeItem('cpt_' + key);
+        } else if (cloudStateLastWrite.current[key] === now) {
+          delete cloudStateLastWrite.current[key];
+        }
+      });
+    };
+
+    persist('users', users);
+    persist('coins', coins);
+    // Open-trade floating PnL changes every timer tick; only persist durable trade changes.
+    const durableTrades = trades.map((trade) =>
+      trade.status === 'OPEN'
+        ? { ...trade, currentPrice: trade.entryPrice, pnl: 0, pnlPercent: 0 }
+        : trade
+    );
+    persist('trades', durableTrades);
+    persist('tickets', supportTickets);
+    persist('adjustments', balanceAdjustments);
+    persist('deposits', depositRequests);
+    persist('withdrawals', withdrawalRequests);
+    persist('audit', auditLogs);
+    persist('settings', systemSettings);
+    persist('activeSupportUsers', activeSupportUsers);
+    persist('marketDataMode', marketDataMode);
+  }, [
+    cloudStateReady,
+    users,
+    coins,
+    trades,
+    supportTickets,
+    balanceAdjustments,
+    depositRequests,
+    withdrawalRequests,
+    auditLogs,
+    systemSettings,
+    activeSupportUsers,
+    marketDataMode,
+  ]);
 
   // Live Price Ticker & Trade PnL Updater
   useEffect(() => {
@@ -1554,7 +1635,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetAllData = () => {
-    localStorage.clear();
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('cpt_isAdmin');
+    }
     setUsers(initialUsers);
     setCurrentUserId('user-827592');
     setCoins(initialCoins);

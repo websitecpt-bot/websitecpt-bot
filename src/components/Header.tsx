@@ -170,9 +170,9 @@ export const Header: React.FC = () => {
                 />
 
                 {/* Dropdown Menu - Centered modal on mobile, clean dropdown on desktop */}
-                <div className="fixed inset-x-4 top-24 md:static md:inset-auto md:absolute md:right-0 md:mt-2 w-auto md:w-52 max-w-xs mx-auto bg-[#131722] border border-[#262e42] rounded-xl shadow-2xl p-2 z-50">
+                <div className="fixed inset-x-4 top-20 md:inset-auto md:absolute md:right-0 md:top-full md:mt-2 w-auto md:w-56 max-w-xs mx-auto bg-[#131722] border border-[#262e42] rounded-xl shadow-2xl p-2 z-50">
                   <div className="flex items-center justify-between px-2.5 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-[#22293b]">
-                    <span>Language / ভাষা</span>
+                    <span>Language</span>
                     <button
                       type="button"
                       onClick={() => setLangDropdownOpen(false)}

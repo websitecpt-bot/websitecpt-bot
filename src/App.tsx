@@ -9,10 +9,12 @@ import { OrderHistoryView } from './views/OrderHistoryView';
 import { AccountView } from './views/AccountView';
 import { AdminPanel } from './views/AdminPanel';
 import { UserLoginView } from './views/UserLoginView';
+import { ClientTradingAgreementView } from './views/ClientTradingAgreementView';
 import { SupportModal } from './components/SupportModal';
 import { DepositModal } from './components/DepositModal';
 import { TransferModal } from './components/TransferModal';
 import { Headphones, Home, TrendingUp, ArrowLeftRight, Clock, User } from 'lucide-react';
+import { TRANSLATIONS } from './utils/translations';
 
 const CookieConsentBanner: React.FC = () => {
   const [accepted, setAccepted] = React.useState(() => {
@@ -50,7 +52,8 @@ const CookieConsentBanner: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { activeTab, setActiveTab, isUserLoggedIn, setIsSupportOpen } = useApp();
+  const { activeTab, setActiveTab, isUserLoggedIn, setIsSupportOpen, language } = useApp();
+  const t = TRANSLATIONS[language] || TRANSLATIONS.en;
 
   // Listen to browser navigation popstate
   React.useEffect(() => {
@@ -60,6 +63,8 @@ const AppContent: React.FC = () => {
         setActiveTab('admin');
       } else if (path === '/login' || path === '/register') {
         setActiveTab('login');
+      } else if (path === '/agreement') {
+        setActiveTab('agreement');
       } else if (path === '/' && !isUserLoggedIn) {
         setActiveTab('login');
       }
@@ -68,11 +73,11 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleLocation);
   }, [isUserLoggedIn, setActiveTab]);
 
-  const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin';
+  const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin' && activeTab !== 'agreement';
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 flex flex-col font-sans">
-      {/* Top Header - Rendered strictly for authenticated user tabs, NEVER on Login or Admin */}
+      {/* Top Header - Rendered strictly for authenticated user tabs, NEVER on Login, Admin or Agreement */}
       {showHeader && <Header />}
 
       {/* Main Routed Content */}
@@ -82,6 +87,8 @@ const AppContent: React.FC = () => {
           <AdminPanel />
         ) : !isUserLoggedIn || activeTab === 'login' ? (
           <UserLoginView />
+        ) : activeTab === 'agreement' ? (
+          <ClientTradingAgreementView />
         ) : (
           <>
             {activeTab === 'home' && <HomeView />}
@@ -102,7 +109,7 @@ const AppContent: React.FC = () => {
       <CookieConsentBanner />
 
       {/* Mobile Bottom Navigation Bar (Matching screenshot: Home, Market, Trade, History, Account) */}
-      {isUserLoggedIn && activeTab !== 'admin' && activeTab !== 'login' && (
+      {isUserLoggedIn && activeTab !== 'admin' && activeTab !== 'login' && activeTab !== 'agreement' && (
         <nav
           aria-label="Mobile Navigation"
           className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0c1017]/95 backdrop-blur-lg border-t border-[#1a2234] py-2 px-3 flex items-center justify-around select-none shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
@@ -116,7 +123,7 @@ const AppContent: React.FC = () => {
             }`}
           >
             <Home className="w-5 h-5" />
-            <span className="text-[10px]">Home</span>
+            <span className="text-[10px]">{t.home}</span>
           </button>
 
           <button
@@ -128,7 +135,7 @@ const AppContent: React.FC = () => {
             }`}
           >
             <TrendingUp className="w-5 h-5" />
-            <span className="text-[10px]">Market</span>
+            <span className="text-[10px]">{t.market}</span>
           </button>
 
           <button
@@ -140,7 +147,7 @@ const AppContent: React.FC = () => {
             }`}
           >
             <ArrowLeftRight className="w-5 h-5" />
-            <span className="text-[10px]">Trade</span>
+            <span className="text-[10px]">{t.trade}</span>
           </button>
 
           <button
@@ -152,7 +159,7 @@ const AppContent: React.FC = () => {
             }`}
           >
             <Clock className="w-5 h-5" />
-            <span className="text-[10px]">History</span>
+            <span className="text-[10px]">{t.history}</span>
           </button>
 
           <button
@@ -164,7 +171,7 @@ const AppContent: React.FC = () => {
             }`}
           >
             <User className="w-5 h-5" />
-            <span className="text-[10px]">Account</span>
+            <span className="text-[10px]">{t.account}</span>
           </button>
         </nav>
       )}

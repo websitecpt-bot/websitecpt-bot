@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { MarketTable } from '../components/MarketTable';
 import { CptLogo } from '../components/CptLogo';
+import { TRANSLATIONS } from '../utils/translations';
 
 export const HomeView: React.FC = () => {
   const {
@@ -26,8 +27,10 @@ export const HomeView: React.FC = () => {
     setIsSupportOpen,
     setIsDepositModalOpen,
     setIsTransferModalOpen,
+    language,
   } = useApp();
 
+  const t = TRANSLATIONS[language] || TRANSLATIONS.en;
   const [showBalance, setShowBalance] = useState(true);
 
   // Calculate live floating PnL from active trades
@@ -41,7 +44,7 @@ export const HomeView: React.FC = () => {
       {/* Welcome & Banner */}
       <div className="space-y-3">
         <h1 className="text-xl sm:text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <span>Welcome,</span>
+          <span>{t.welcome},</span>
           <span className="text-amber-400 capitalize">{currentUser.name}</span>
           <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-medium">
             Standard VIP
@@ -54,10 +57,10 @@ export const HomeView: React.FC = () => {
             <CptLogo size={34} />
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-white tracking-wide">
-                Trading Across 120+ Countries
+                {t.tradingAcrossCountries}
               </h2>
               <p className="text-xs text-slate-400 font-medium mt-0.5">
-                A Global Trading Experience
+                {t.globalTradingExp}
               </p>
             </div>
           </div>
@@ -71,7 +74,7 @@ export const HomeView: React.FC = () => {
       {/* Total Assets & Balance Card */}
       <div className="bg-[#121620] border border-[#22293b] rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
         <div className="flex items-center justify-between">
-          <span className="text-xs sm:text-sm font-medium text-slate-400">Total Assets (USD)</span>
+          <span className="text-xs sm:text-sm font-medium text-slate-400">{t.totalAssets}</span>
           <button
             onClick={() => setShowBalance(!showBalance)}
             className="text-amber-400 hover:text-amber-300 transition-colors p-1"
@@ -91,13 +94,13 @@ export const HomeView: React.FC = () => {
         {/* Sub-balances breakdown matching Screenshot 2 */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-[#1e2536] text-xs">
           <div>
-            <span className="text-slate-400 block">Funding</span>
+            <span className="text-slate-400 block">{t.fundingWallet}</span>
             <span className="font-mono font-semibold text-slate-200 mt-0.5 block">
               {showBalance ? `$${currentUser.fundingBalance.toFixed(2)}` : '••••'}
             </span>
           </div>
           <div>
-            <span className="text-slate-400 block">Trading</span>
+            <span className="text-slate-400 block">{t.tradingWallet}</span>
             <span className="font-mono font-semibold text-amber-400 mt-0.5 block">
               {showBalance ? `$${currentUser.tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '••••'}
             </span>
@@ -126,15 +129,15 @@ export const HomeView: React.FC = () => {
         <div className="grid grid-cols-2 gap-3 mt-6">
           <button
             onClick={() => setActiveTab('trade')}
-            className="w-full bg-[#f4b41a] hover:bg-[#e0a416] text-black font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-amber-500/20 active:scale-[0.99] flex items-center justify-center gap-2"
+            className="w-full bg-[#f4b41a] hover:bg-[#e0a416] text-black font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-amber-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
-            <span>Trade</span>
+            <span>{t.trade}</span>
           </button>
           <button
             onClick={() => setIsDepositModalOpen(true)}
-            className="w-full bg-[#202636] hover:bg-[#283042] text-slate-200 font-bold py-3 px-4 rounded-xl text-sm transition-all border border-[#2d374d] active:scale-[0.99] flex items-center justify-center gap-2"
+            className="w-full bg-[#202636] hover:bg-[#283042] text-slate-200 font-bold py-3 px-4 rounded-xl text-sm transition-all border border-[#2d374d] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
-            <span>Deposit</span>
+            <span>{t.deposit}</span>
           </button>
         </div>
       </div>
@@ -149,7 +152,7 @@ export const HomeView: React.FC = () => {
           <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Headphones className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-amber-400">Support</span>
+          <span className="text-xs font-semibold text-slate-300 group-hover:text-amber-400">{t.liveSupport}</span>
         </button>
 
         {/* Transfer */}
@@ -160,7 +163,7 @@ export const HomeView: React.FC = () => {
           <div className="w-10 h-10 rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <ArrowLeftRight className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-blue-400">Transfer</span>
+          <span className="text-xs font-semibold text-slate-300 group-hover:text-blue-400">{t.transfer}</span>
         </button>
 
         {/* History */}
@@ -171,7 +174,7 @@ export const HomeView: React.FC = () => {
           <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <History className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-emerald-400">History</span>
+          <span className="text-xs font-semibold text-slate-300 group-hover:text-emerald-400">{t.history}</span>
         </button>
 
         {/* Refer */}

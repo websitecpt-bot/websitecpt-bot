@@ -94,32 +94,3 @@ ALTER TABLE public.trades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deposit_requests DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.withdrawal_requests DISABLE ROW LEVEL SECURITY;
-
-
--- 6. SHARED APPLICATION STATE
--- Stores the app-wide settings and records that were previously kept only in browser localStorage.
-CREATE TABLE IF NOT EXISTS public.app_state (
-  state_key TEXT PRIMARY KEY,
-  state_value JSONB NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Match the existing prototype's public-client access model.
-ALTER TABLE public.app_state DISABLE ROW LEVEL SECURITY;
-
--- Enable Supabase Realtime for cross-device updates.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime'
-      AND schemaname = 'public'
-      AND tablename = 'app_state'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.app_state;
-  END IF;
-EXCEPTION
-  WHEN undefined_object THEN
-    RAISE NOTICE 'supabase_realtime publication is unavailable; enable Realtime for public.app_state in Supabase Dashboard.';
-END $$;

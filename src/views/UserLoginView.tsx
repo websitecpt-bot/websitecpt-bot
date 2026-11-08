@@ -6,36 +6,34 @@ import {
   Eye,
   EyeOff,
   Mail,
-  Phone,
-  Shield,
+  ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Headphones,
-  UserPlus,
-  ArrowRight,
-  Gift,
+  Shield,
+  Loader2,
 } from 'lucide-react';
-import { CptLogo } from '../components/CptLogo';
 import { OFFICIAL_REFERRAL_CODES } from '../data/initialData';
 
 export const UserLoginView: React.FC = () => {
-  const { loginUser, registerUser, setActiveTab, setIsAdmin, setIsSupportOpen, users } = useApp();
+  const { loginUser, registerUser, setIsSupportOpen, users } = useApp();
 
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Sign In fields
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
-  // Register fields
-  const [regName, setRegName] = useState('');
+  // Register fields (matches user screenshot exactly)
+  const [regUsername, setRegUsername] = useState('');
   const [regEmail, setRegEmail] = useState('');
-  const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [regReferralCode, setRegReferralCode] = useState('');
+  const [regInviteCode, setRegInviteCode] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   // Animated registration success state
   const [registeredSuccessUser, setRegisteredSuccessUser] = useState<{
@@ -56,14 +54,14 @@ export const UserLoginView: React.FC = () => {
       const searchParams = new URLSearchParams(window.location.search);
       const ref = searchParams.get('ref');
       if (ref) {
-        setRegReferralCode(ref.trim());
+        setRegInviteCode(ref.trim());
         setMode('register');
       }
     }
   }, []);
 
   // Check matching inviter in real time (either existing user UID or 3 official master codes: 100001, 777888, 992282)
-  const trimmedRef = regReferralCode.trim();
+  const trimmedRef = regInviteCode.trim();
   const officialMatch = OFFICIAL_REFERRAL_CODES.find((o) => o.code === trimmedRef);
   const userMatch = trimmedRef ? users.find((u) => u.uid === trimmedRef) : null;
 
@@ -76,75 +74,87 @@ export const UserLoginView: React.FC = () => {
   // Feedback messages
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const handleSignInSubmit = (e: React.FormEvent) => {
+  const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
+    setIsSubmitting(true);
 
-    const res = loginUser(loginIdentifier, loginPassword);
-    if (!res.success) {
-      setFeedback({ type: 'error', message: res.message });
+    try {
+      const res = await loginUser(loginIdentifier.trim(), loginPassword);
+      if (!res.success) {
+        setFeedback({ type: 'error', message: res.message || 'Invalid credentials' });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Login failed. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
 
-    if (regPassword && regConfirmPassword && regPassword !== regConfirmPassword) {
-      setFeedback({ type: 'error', message: 'Passwords do not match. Please re-enter.' });
+    if (regPassword.length < 6) {
+      setFeedback({ type: 'error', message: 'Password must be at least 6 characters long.' });
       return;
     }
 
-    const trimmedRef = regReferralCode.trim();
-    if (!trimmedRef) {
+    if (regPassword !== regConfirmPassword) {
+      setFeedback({ type: 'error', message: 'Passwords do not match. Please verify and re-enter.' });
+      return;
+    }
+
+    // Invite code validation: if provided, verify it exists. If empty, default to master code 100001
+    const codeToUse = trimmedRef || '100001';
+    if (trimmedRef && !matchedInviter) {
       setFeedback({
         type: 'error',
-        message: 'Referral Code is required to register. Please enter a valid inviter UID.',
+        message: 'Invalid invite code. Please enter a valid inviter UID or leave blank for default.',
       });
       return;
     }
 
-    if (!matchedInviter) {
-      setFeedback({
-        type: 'error',
-        message: 'Invalid Referral Code. Please enter a valid inviter UID.',
-      });
-      return;
-    }
+    setIsSubmitting(true);
 
-    const res = registerUser({
-      name: regName,
-      email: regEmail,
-      phone: regPhone,
-      password: regPassword,
-      referralCode: trimmedRef,
-    });
-
-    if (res.success && res.user) {
-      setRegisteredSuccessUser({
-        name: res.user.name,
-        uid: res.user.uid,
-        email: res.user.email,
+    try {
+      const res = await registerUser({
+        name: regUsername.trim(),
+        email: regEmail.trim(),
+        password: regPassword,
+        referralCode: codeToUse,
       });
 
-      // Automatically prefill login identifier with registered email/name
-      setLoginIdentifier(res.user.email);
-      setLoginPassword('');
-
-      // After 2.5 seconds, automatically smoothly redirect to Sign In form
-      setTimeout(() => {
-        setRegisteredSuccessUser(null);
-        setMode('signin');
-        setFeedback({
-          type: 'success',
-          message: `Registration successful! Your Account UID is ${res.user?.uid}. Please enter your password to sign in.`,
+      if (res.success && res.user) {
+        setRegisteredSuccessUser({
+          name: res.user.name,
+          uid: res.user.uid,
+          email: res.user.email,
         });
-      }, 2500);
-      return;
-    }
 
-    if (!res.success) {
-      setFeedback({ type: 'error', message: res.message });
+        // Automatically prefill login identifier with registered email/name
+        setLoginIdentifier(res.user.email);
+        setLoginPassword('');
+
+        // After 2.5 seconds, automatically smoothly redirect to Sign In form
+        setTimeout(() => {
+          setRegisteredSuccessUser(null);
+          setMode('signin');
+          setFeedback({
+            type: 'success',
+            message: `Account created successfully! Your UID is ${res.user?.uid}. Please sign in with your password.`,
+          });
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/login');
+          }
+        }, 2500);
+      } else {
+        setFeedback({ type: 'error', message: res.message || 'Registration failed. Please try again.' });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Registration error. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -153,16 +163,25 @@ export const UserLoginView: React.FC = () => {
       {/* Radial soft blue glow matching Screenshot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] bg-[#0c1f44]/40 rounded-full blur-[100px] pointer-events-none"></div>
 
-      <div className="w-full max-w-[420px] relative z-10 text-center space-y-6">
-        {/* Clean Logo Header */}
-        <div className="flex flex-col items-center justify-center space-y-2">
-          <CptLogo size={42} showText={true} />
-          <p className="text-xs text-slate-400">
-            {mode === 'signin' ? 'Sign in to access your trading account' : 'Join CPT Markets for global trading'}
+      <div className="w-full max-w-[440px] relative z-10 text-center space-y-5">
+        {/* Top Gold Circular Badge matching user screenshot */}
+        <div className="flex flex-col items-center justify-center">
+          <div className="w-14 h-14 rounded-full border-2 border-amber-500/80 p-0.5 mx-auto flex items-center justify-center bg-[#070b14] shadow-[0_0_20px_rgba(245,166,35,0.35)]">
+            <div className="w-full h-full rounded-full border border-amber-400/60 flex flex-col items-center justify-center text-center p-1">
+              <span className="text-[9px] font-black text-amber-400 leading-tight tracking-wider">CPT</span>
+              <span className="text-[6.5px] font-extrabold text-amber-300/90 leading-none tracking-widest">MARKETS</span>
+            </div>
+          </div>
+
+          <h1 className="text-2xl font-black text-amber-400 tracking-tight mt-3">
+            {mode === 'signin' ? 'Sign In' : 'Create Account'}
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            {mode === 'signin' ? 'Sign in to access your trading account' : 'Join CptMarkets for global trading'}
           </p>
         </div>
 
-        {/* Celebratory Registration Success Card requested by user */}
+        {/* Celebratory Registration Success Card */}
         {registeredSuccessUser && (
           <div className="bg-[#0e1628] border border-emerald-500/40 rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-300">
             <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border-2 border-emerald-400 mx-auto flex items-center justify-center animate-bounce shadow-lg shadow-emerald-500/30">
@@ -172,17 +191,17 @@ export const UserLoginView: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold text-white">Registration Successful!</h2>
               <p className="text-xs text-emerald-300 font-medium mt-1">
-                রেজিস্ট্রেশন সফল হয়েছে!
+                Your trader account has been created.
               </p>
             </div>
 
             <div className="bg-[#141f36] border border-[#213254] rounded-xl p-3.5 text-left space-y-2 text-xs font-mono">
               <div className="flex justify-between">
-                <span className="text-slate-400">Name:</span>
+                <span className="text-slate-400">Username:</span>
                 <span className="text-white font-bold">{registeredSuccessUser.name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Your UID:</span>
+                <span className="text-slate-400">Account UID:</span>
                 <span className="text-amber-400 font-bold">{registeredSuccessUser.uid}</span>
               </div>
               <div className="flex justify-between">
@@ -194,7 +213,7 @@ export const UserLoginView: React.FC = () => {
             <div className="pt-2 space-y-2">
               <div className="flex items-center justify-center gap-2 text-xs text-slate-300">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                <span>Redirecting to Sign In page...</span>
+                <span>Redirecting to Sign In form...</span>
               </div>
               <div className="w-full bg-[#1b253b] rounded-full h-1.5 overflow-hidden">
                 <div className="bg-gradient-to-r from-amber-400 to-emerald-400 h-full w-full animate-pulse"></div>
@@ -232,252 +251,284 @@ export const UserLoginView: React.FC = () => {
           </div>
         )}
 
-        {/* MODE 1: SIGN IN (Matches Screenshot exactly) */}
-        {!registeredSuccessUser && mode === 'signin' && (
-          <form onSubmit={handleSignInSubmit} className="space-y-4 text-left text-xs">
-            {/* Username / Email */}
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-semibold block text-[13px]">
-                Username / Email
-              </label>
-              <div className="relative">
-                <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  value={loginIdentifier}
-                  onChange={(e) => setLoginIdentifier(e.target.value)}
-                  placeholder="Username / Email"
-                  className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner"
-                />
-              </div>
-            </div>
+        {/* MAIN CARD CONTAINER */}
+        {!registeredSuccessUser && (
+          <div className="bg-[#0c1426]/90 border border-[#1b2a4a] rounded-2xl p-6 shadow-2xl backdrop-blur-sm">
+            {/* MODE 1: SIGN IN */}
+            {mode === 'signin' && (
+              <form onSubmit={handleSignInSubmit} className="space-y-4 text-left text-xs">
+                {/* Username / Email */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Username / Email
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={loginIdentifier}
+                      onChange={(e) => setLoginIdentifier(e.target.value)}
+                      placeholder="Username / Email"
+                      className="w-full bg-[#111c34] border border-[#223356] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner"
+                    />
+                  </div>
+                </div>
 
-            {/* Password */}
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-semibold block text-[13px]">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showLoginPassword ? 'text' : 'password'}
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Password"
-                  className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner font-mono"
-                />
+                {/* Password */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Password"
+                      className="w-full bg-[#111c34] border border-[#223356] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Big Golden Button */}
                 <button
-                  type="button"
-                  onClick={() => setShowLoginPassword(!showLoginPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-gradient-to-r from-[#e67e00] via-[#f5a623] to-[#e67e00] hover:from-[#d87200] hover:to-[#e67e00] text-black font-extrabold py-3.5 rounded-xl transition-all shadow-[0_4px_25px_rgba(245,166,35,0.4)] active:scale-[0.98] cursor-pointer text-sm tracking-wide mt-2 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Big Golden Button matching Screenshot */}
-            <button
-              type="submit"
-              className="w-full bg-gradient-to-r from-[#f5a623] via-[#ffb938] to-[#e69818] hover:from-[#e69818] hover:to-[#d8890e] text-black font-extrabold py-3.5 rounded-xl transition-all shadow-[0_4px_25px_rgba(245,166,35,0.35)] active:scale-[0.98] cursor-pointer text-sm tracking-wide mt-2"
-            >
-              Go to Sign In
-            </button>
-
-            {/* Links */}
-            <div className="flex items-center justify-between text-xs pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('register');
-                  setFeedback(null);
-                  if (typeof window !== 'undefined') {
-                    window.history.pushState({}, '', '/register');
-                  }
-                }}
-                className="text-[#f5a623] hover:underline flex items-center gap-1.5 font-semibold cursor-pointer"
-              >
-                <UserIcon className="w-3.5 h-3.5" />
-                <span>Create Account</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsSupportOpen(true)}
-                className="text-[#f5a623] hover:underline flex items-center gap-1.5 font-semibold cursor-pointer"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span>Forgot Password / Help</span>
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* MODE 2: CREATE ACCOUNT (REGISTRATION) */}
-        {!registeredSuccessUser && mode === 'register' && (
-          <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-left text-xs">
-            <div className="text-center pb-1">
-              <h3 className="text-base font-bold text-white">Create New Trader Account</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Instant registration. An exclusive UID will be assigned to you.
-              </p>
-            </div>
-
-            {/* Name / Username */}
-            <div className="space-y-1">
-              <label className="text-slate-300 font-medium block">Username / Full Name</label>
-              <div className="relative">
-                <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  placeholder="Username / Full Name"
-                  className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-2.5 outline-none text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Email */}
-            <div className="space-y-1">
-              <label className="text-slate-300 font-medium block">Email Address</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="Email Address"
-                  className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-2.5 outline-none text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Phone (optional) */}
-            <div className="space-y-1">
-              <label className="text-slate-300 font-medium block">Phone Number (Optional)</label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="tel"
-                  value={regPhone}
-                  onChange={(e) => setRegPhone(e.target.value)}
-                  placeholder="Phone Number (Optional)"
-                  className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-2.5 outline-none text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-slate-300 font-medium block">Password</label>
-                <div className="relative">
-                  <input
-                    type={showRegPassword ? 'text' : 'password'}
-                    required
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Password"
-                    className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl px-3 py-2.5 outline-none text-xs font-mono"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-slate-300 font-medium block">Confirm</label>
-                <div className="relative">
-                  <input
-                    type={showRegPassword ? 'text' : 'password'}
-                    required
-                    value={regConfirmPassword}
-                    onChange={(e) => setRegConfirmPassword(e.target.value)}
-                    placeholder="Confirm Password"
-                    className="w-full bg-[#0c1426]/90 border border-[#1e2f52] focus:border-amber-400 text-white rounded-xl px-3 py-2.5 outline-none text-xs font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Referral Code (Mandatory Requirement) */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-slate-300 font-medium block">
-                  Referral Code <span className="text-rose-400 font-bold">*</span>
-                </label>
-                <span className="text-[10px] text-amber-400/90 font-medium">Inviter UID required</span>
-              </div>
-              <div className="relative">
-                <Gift className="w-4 h-4 text-amber-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  value={regReferralCode}
-                  onChange={(e) => setRegReferralCode(e.target.value)}
-                  placeholder="Enter Inviter UID"
-                  className={`w-full bg-[#0c1426]/90 border rounded-xl pl-10 pr-4 py-2.5 outline-none text-xs font-mono transition-colors ${
-                    matchedInviter
-                      ? 'border-emerald-500/80 text-emerald-300 focus:border-emerald-400'
-                      : regReferralCode.trim()
-                      ? 'border-rose-500/80 text-rose-300 focus:border-rose-400'
-                      : 'border-[#1e2f52] focus:border-amber-400 text-white'
-                  }`}
-                />
-              </div>
-
-              {/* Dynamic Inviter Verification Feedback */}
-              {regReferralCode.trim() && (
-                <div className="pt-1">
-                  {matchedInviter ? (
-                    <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                      <span>
-                        Verified Inviter Code: <strong className="text-white font-mono">UID {matchedInviter.uid}</strong>
-                        {matchedInviter.isOfficial && <span className="ml-1.5 text-amber-400 font-bold">(Official Master Code)</span>}
-                      </span>
-                    </div>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-black" />
+                      <span>Signing In...</span>
+                    </>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-[11px] text-rose-400 font-medium bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-                      <span>Invalid Referral Code. Please enter a valid inviter UID.</span>
-                    </div>
+                    <span>Go to Sign In</span>
+                  )}
+                </button>
+
+                {/* Links */}
+                <div className="flex items-center justify-between text-xs pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('register');
+                      setFeedback(null);
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState({}, '', '/register');
+                      }
+                    }}
+                    className="text-[#f5a623] hover:underline flex items-center gap-1.5 font-semibold cursor-pointer"
+                  >
+                    <UserIcon className="w-3.5 h-3.5" />
+                    <span>Create Account</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSupportOpen(true)}
+                    className="text-[#f5a623] hover:underline flex items-center gap-1.5 font-semibold cursor-pointer"
+                  >
+                    <Headphones className="w-3.5 h-3.5" />
+                    <span>Forgot Password / Help</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* MODE 2: CREATE ACCOUNT (Matches screenshot image_ae3f08d4.png 1:1) */}
+            {mode === 'register' && (
+              <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-left text-xs">
+                {/* 1. Username */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Username
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={regUsername}
+                      onChange={(e) => setRegUsername(e.target.value)}
+                      placeholder="Username"
+                      className="w-full bg-[#111c34] border border-[#223356] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Email */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="Email address"
+                      className="w-full bg-[#111c34] border border-[#223356] focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Password */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="Password (at least 6 characters)"
+                      className="w-full bg-[#111c34] border border-[#223356] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegPassword(!showRegPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Confirm Password */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Confirm Password
+                  </label>
+                  <div className="relative">
+                    <ShieldCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showRegConfirmPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={regConfirmPassword}
+                      onChange={(e) => setRegConfirmPassword(e.target.value)}
+                      placeholder="Confirm Password"
+                      className="w-full bg-[#111c34] border border-[#223356] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      {showRegConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5. Invite Code */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-medium block text-xs">
+                    Invite Code
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={regInviteCode}
+                      onChange={(e) => setRegInviteCode(e.target.value)}
+                      placeholder="Invite code (optional)"
+                      className={`w-full bg-[#111c34] border rounded-xl pl-10 pr-4 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner font-mono ${
+                        matchedInviter
+                          ? 'border-emerald-500/80 text-emerald-300 focus:border-emerald-400'
+                          : regInviteCode.trim()
+                          ? 'border-rose-500/80 text-rose-300 focus:border-rose-400'
+                          : 'border-[#223356] focus:border-amber-400 text-white'
+                      }`}
+                    />
+                  </div>
+                  {/* Verified indicator if matched */}
+                  {regInviteCode.trim() && matchedInviter && (
+                    <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1 pt-0.5">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Valid inviter code: UID {matchedInviter.uid}</span>
+                    </p>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Submit Registration Button */}
-            <button
-              type="submit"
-              className="w-full bg-gradient-to-r from-[#f5a623] to-[#e69818] hover:from-[#e69818] hover:to-[#d8890e] text-black font-extrabold py-3.5 rounded-xl transition-all shadow-[0_4px_25px_rgba(245,166,35,0.35)] active:scale-[0.98] cursor-pointer text-sm tracking-wide mt-2"
-            >
-              Create Account & Start Trading
-            </button>
+                {/* Big Orange-Gold Register Button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-gradient-to-r from-[#e67e00] via-[#f5a623] to-[#e67e00] hover:from-[#d87200] hover:to-[#e67e00] text-black font-extrabold py-3.5 rounded-xl transition-all shadow-[0_4px_25px_rgba(245,166,35,0.4)] active:scale-[0.98] cursor-pointer text-sm tracking-wide mt-3 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-black" />
+                      <span>Registering...</span>
+                    </>
+                  ) : (
+                    <span>Register</span>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
 
-            {/* Back to Sign In */}
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signin');
-                  setFeedback(null);
-                  if (typeof window !== 'undefined') {
-                    window.history.pushState({}, '', '/login');
-                  }
-                }}
-                className="text-[#f5a623] hover:underline font-semibold cursor-pointer text-xs"
-              >
-                ← Already have an account? Go to Sign In
-              </button>
-            </div>
-          </form>
+        {/* Bottom switch link matching screenshot: "Already have an account? Go to Sign In" */}
+        {!registeredSuccessUser && (
+          <div className="text-center text-xs text-slate-400">
+            {mode === 'register' ? (
+              <p>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signin');
+                    setFeedback(null);
+                    if (typeof window !== 'undefined') {
+                      window.history.pushState({}, '', '/login');
+                    }
+                  }}
+                  className="text-amber-400 font-extrabold hover:underline cursor-pointer ml-1"
+                >
+                  Go to Sign In
+                </button>
+              </p>
+            ) : (
+              <p>
+                Don&apos;t have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('register');
+                    setFeedback(null);
+                    if (typeof window !== 'undefined') {
+                      window.history.pushState({}, '', '/register');
+                    }
+                  }}
+                  className="text-amber-400 font-extrabold hover:underline cursor-pointer ml-1"
+                >
+                  Create Account
+                </button>
+              </p>
+            )}
+          </div>
         )}
 
         {/* Platform Compliance & Security Footer */}
-        <div className="pt-4 border-t border-[#182647] text-center space-y-2 text-xs text-slate-500">
+        <div className="pt-2 border-t border-[#182647]/50 text-center space-y-1.5 text-xs text-slate-500">
           <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400">
             <Shield className="w-3.5 h-3.5 text-amber-400/80" />
             <span>Regulated Margin Brokerage & 256-Bit SSL Encrypted</span>

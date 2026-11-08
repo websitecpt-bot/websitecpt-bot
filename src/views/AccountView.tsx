@@ -25,6 +25,9 @@ import {
   Upload,
   Trash2,
   Loader2,
+  Eye,
+  EyeOff,
+  ChevronLeft,
 } from 'lucide-react';
 import { compressImageFile } from '../utils/imageCompressor';
 
@@ -40,6 +43,8 @@ export const AccountView: React.FC = () => {
     withdrawalRequests,
     logoutUser,
     updateUserAvatar,
+    clientAgreement,
+    changePassword,
   } = useApp();
 
   const [activeSubView, setActiveSubView] = useState<
@@ -57,6 +62,48 @@ export const AccountView: React.FC = () => {
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [showWithdrawHistory, setShowWithdrawHistory] = useState(false);
   const [withdrawFeedback, setWithdrawFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Password Change state (Security View matching Screenshot 3)
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [passwordFeedback, setPasswordFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordFeedback(null);
+
+    if (newPassword.length < 6) {
+      setPasswordFeedback({ type: 'error', message: 'New password must be at least 6 characters long.' });
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordFeedback({ type: 'error', message: 'New password and confirm password do not match.' });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const res = await changePassword(currentPassword, newPassword);
+      if (res.success) {
+        setPasswordFeedback({ type: 'success', message: res.message });
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+      } else {
+        setPasswordFeedback({ type: 'error', message: res.message });
+      }
+    } catch (err: any) {
+      setPasswordFeedback({ type: 'error', message: err?.message || 'Failed to update password.' });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   // Invite & Referral copy state
   const [copiedCode, setCopiedCode] = useState(false);
@@ -410,6 +457,41 @@ export const AccountView: React.FC = () => {
                   <span className="text-[10px] bg-purple-500/15 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-semibold">
                     {myReferrals.length} Referred
                   </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors" />
+            </button>
+
+            {/* Agreement Menu Item matching screenshot image_e34ed765.png */}
+            <button
+              onClick={() => {
+                setActiveTab('agreement');
+                if (typeof window !== 'undefined') {
+                  window.history.pushState({}, '', '/agreement');
+                }
+              }}
+              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center relative group-hover:scale-105 transition-transform">
+                  <FileText className="w-4 h-4 text-purple-300" />
+                  <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[7px] font-bold">
+                    ✓
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-200 group-hover:text-purple-300 transition-colors">
+                    Agreement
+                  </span>
+                  {clientAgreement ? (
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono">
+                      Executed · {clientAgreement.durationDays}D
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-medium">
+                      Formal Contract
+                    </span>
+                  )}
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors" />
@@ -929,7 +1011,7 @@ export const AccountView: React.FC = () => {
                 </div>
               )}
               <div>
-                <span className="font-bold text-white text-sm block">Profile Photo (অ্যাকাউন্টের ছবি)</span>
+                <span className="font-bold text-white text-sm block">Profile Photo</span>
                 <span className="text-[11px] text-slate-400">PNG, JPG, or WEBP supported</span>
               </div>
             </div>
@@ -995,50 +1077,168 @@ export const AccountView: React.FC = () => {
         </div>
       )}
 
-      {/* SUBVIEW: SECURITY */}
+      {/* SUBVIEW: SECURITY matching Screenshot 3 */}
       {activeSubView === 'security' && (
-        <div className="bg-[#10141f] border border-[#1e2538] rounded-2xl p-6 shadow-xl space-y-5">
-          <div className="flex items-center justify-between border-b border-[#1c2336] pb-4">
-            <h3 className="text-base font-bold text-white">Security & 2FA</h3>
+        <div className="space-y-4">
+          {/* Header matching Screenshot 3 */}
+          <div className="flex items-center justify-between py-2 border-b border-[#1c2336] mb-2">
             <button
               onClick={() => setActiveSubView('menu')}
-              className="text-xs text-amber-400 hover:underline cursor-pointer"
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-[#161c2a] transition-colors cursor-pointer"
             >
-              ← Back to Account
+              <ChevronLeft className="w-5 h-5" />
             </button>
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">Security</h2>
+            <div className="w-7"></div>
           </div>
 
-          <div className="space-y-4 text-xs">
-            <div className="p-4 bg-[#141a26] border border-[#20293d] rounded-xl flex items-center justify-between">
-              <div>
-                <span className="font-bold text-white block">Two-Factor Authentication (2FA)</span>
-                <span className="text-slate-400 text-[11px]">Protect your account with OTP security</span>
+          {/* Card 1: Login Password */}
+          <div className="bg-[#101524] border border-[#1e273d] rounded-2xl p-4 sm:p-5 flex items-start justify-between shadow-md">
+            <div className="space-y-1">
+              <span className="font-bold text-white block text-sm sm:text-base">Login Password</span>
+              <p className="text-slate-400 text-xs">Your primary login password is currently protected and active.</p>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+              Active
+            </span>
+          </div>
+
+          {/* Card 2: Device Protection */}
+          <div className="bg-[#101524] border border-[#1e273d] rounded-2xl p-4 sm:p-5 flex items-start justify-between shadow-md">
+            <div className="space-y-1">
+              <span className="font-bold text-white block text-sm sm:text-base">Device Protection</span>
+              <p className="text-slate-400 text-xs">New device logins are tracked for additional account safety.</p>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+              Active
+            </span>
+          </div>
+
+          {/* Card 3: Two-Factor Authentication */}
+          <div className="bg-[#101524] border border-[#1e273d] rounded-2xl p-4 sm:p-5 flex items-start justify-between shadow-md">
+            <div className="space-y-1">
+              <span className="font-bold text-white block text-sm sm:text-base">Two-Factor Authentication</span>
+              <p className="text-slate-400 text-xs">Your account uses enhanced protection inside this secure dashboard environment.</p>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+              Active
+            </span>
+          </div>
+
+          {/* Card 4: Change Password Form (Exact Match to Screenshot 3) */}
+          <div className="bg-[#101524] border border-[#1e273d] rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#192236] pb-3.5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white">Change Password</h3>
+                  <p className="text-xs text-slate-400">Update your account login password</p>
+                </div>
               </div>
-              <span className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
-                ENABLED
-              </span>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
             </div>
 
-            <div className="p-4 bg-[#141a26] border border-[#20293d] rounded-xl flex items-center justify-between">
-              <div>
-                <span className="font-bold text-white block">Password Protection</span>
-                <span className="text-slate-400 text-[11px]">Last changed 14 days ago</span>
-              </div>
-              <button
-                onClick={() => alert('Password reset verification email sent.')}
-                className="text-amber-400 hover:underline font-semibold text-xs"
+            {/* Success or error feedback banner */}
+            {passwordFeedback && (
+              <div
+                className={`p-3.5 rounded-xl text-xs flex items-center gap-2 ${
+                  passwordFeedback.type === 'success'
+                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+                }`}
               >
-                Change
-              </button>
-            </div>
-
-            <div className="p-4 bg-[#141a26] border border-[#20293d] rounded-xl flex items-center justify-between">
-              <div>
-                <span className="font-bold text-white block">Login History & Session</span>
-                <span className="text-slate-400 text-[11px]">Current session: Chrome on Windows (London, UK)</span>
+                {passwordFeedback.type === 'success' ? (
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                )}
+                <span>{passwordFeedback.message}</span>
               </div>
-              <span className="text-slate-400 font-mono text-[11px]">Active Now</span>
-            </div>
+            )}
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-3.5 text-xs">
+              {/* Current Password */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-semibold block text-xs">Current Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showCurrentPass ? 'text' : 'password'}
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full bg-[#0c1220] border border-[#1f2b45] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none text-xs font-mono transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPass(!showCurrentPass)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showCurrentPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-semibold block text-xs">New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min. 6 characters"
+                    className="w-full bg-[#0c1220] border border-[#1f2b45] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none text-xs font-mono transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-semibold block text-xs">Confirm New Password</label>
+                <div className="relative">
+                  <Shield className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showConfirmPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                    className="w-full bg-[#0c1220] border border-[#1f2b45] focus:border-amber-400 text-white rounded-xl pl-10 pr-10 py-3 outline-none text-xs font-mono transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPass(!showConfirmPass)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Update Password Button */}
+              <button
+                type="submit"
+                disabled={isUpdatingPassword}
+                className="w-full bg-gradient-to-r from-[#e67e00] via-[#f5a623] to-[#e67e00] hover:from-[#d87200] hover:to-[#e67e00] text-black font-extrabold py-3.5 rounded-xl transition-all shadow-[0_4px_25px_rgba(245,166,35,0.35)] active:scale-[0.99] cursor-pointer text-sm tracking-wide mt-2 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isUpdatingPassword ? <span>Updating Password...</span> : <span>Update Password</span>}
+              </button>
+            </form>
           </div>
         </div>
       )}

@@ -160,3 +160,36 @@ export interface SystemSettings {
   maintenanceMode: boolean;
   marketDataSource: 'live_stream' | 'simulated';
 }
+
+export interface ClientTradingAgreement {
+  id: string;
+  userId: string;
+  agreementNumber: string;
+  // 01 Client Information
+  fullName: string;
+  username: string;
+  uid: string;
+  country: string;
+  city: string;
+  address: string;
+  phoneCode: string;
+  phoneNumber: string;
+  // 02 Agreement Details
+  startDate: string;
+  durationDays: 3 | 5 | 7 | number;
+  endDate: string;
+  tradingPurpose: string;
+  tradeAmount: number;
+  // 03 Identity Document
+  identityDocName?: string;
+  identityDocUrl?: string;
+  // 04 Signature
+  signatureDataUrl: string;
+  // 05 Verification
+  ageConfirmed: boolean;
+  termsAgreed: boolean;
+  // Meta
+  status: 'active' | 'completed' | 'pending';
+  submittedAt: string;
+}
+

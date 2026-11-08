@@ -25,46 +25,7 @@ export const supabase = isSupabaseConfigured()
     })
   : null;
 
-export const fetchAppStateFromSupabase = async (): Promise<Record<string, unknown> | null> => {
-  if (!supabase) return null;
-  try {
-    const { data, error } = await supabase.from('app_state').select('state_key, state_value');
-    if (error) {
-      console.warn('Supabase fetchAppState error:', error.message);
-      return null;
-    }
-    const state: Record<string, unknown> = {};
-    (data || []).forEach((row: any) => {
-      state[row.state_key] = row.state_value;
-    });
-    return state;
-  } catch (err) {
-    console.warn('Supabase fetchAppState exception:', err);
-    return null;
-  }
-};
-
-export const syncAppStateToSupabase = async (key: string, value: unknown): Promise<boolean> => {
-  if (!supabase) return false;
-  try {
-    const { error } = await supabase.from('app_state').upsert(
-      {
-        state_key: key,
-        state_value: value,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'state_key' }
-    );
-    if (error) {
-      console.warn('Supabase syncAppState error:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Supabase syncAppState exception:', err);
-    return false;
-  }
-};
+export const getSupabaseClient = () => supabase;
 
 // ==========================================
 // 1. Fetching Data from Supabase
@@ -386,7 +347,6 @@ export interface RealtimeHandlers {
   onTicketUpdate?: () => void;
   onDepositUpdate?: () => void;
   onWithdrawalUpdate?: () => void;
-  onAppStateUpdate?: (key: string, value: unknown) => void;
 }
 
 export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): RealtimeChannel | null => {
@@ -410,10 +370,6 @@ export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): Realtim
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, () => {
         handlers.onWithdrawalUpdate?.();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, (payload) => {
-        const row = payload.new as { state_key?: string; state_value?: unknown } | null;
-        if (row?.state_key) handlers.onAppStateUpdate?.(row.state_key, row.state_value);
-      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('[Supabase Realtime] Connected to public change feed');
@@ -424,5 +380,50 @@ export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): Realtim
   } catch (err) {
     console.warn('Failed to subscribe to Supabase Realtime channel:', err);
     return null;
+  }
+};
+
+// ==========================================
+// 4. Supabase Auth Helpers
+// ==========================================
+
+export const supabaseAuthSignUp = async (params: {
+  email: string;
+  password?: string;
+  name: string;
+  phone?: string;
+  uid: string;
+}) => {
+  if (!supabase) return { data: null, error: null };
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: params.email,
+      password: params.password || '123456',
+      options: {
+        data: {
+          name: params.name,
+          phone: params.phone || '',
+          uid: params.uid,
+        },
+      },
+    });
+    return { data, error };
+  } catch (err: any) {
+    console.warn('supabaseAuthSignUp exception:', err);
+    return { data: null, error: err };
+  }
+};
+
+export const supabaseAuthSignIn = async (email: string, password?: string) => {
+  if (!supabase) return { data: null, error: null };
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: password || '123456',
+    });
+    return { data, error };
+  } catch (err: any) {
+    console.warn('supabaseAuthSignIn exception:', err);
+    return { data: null, error: err };
   }
 };

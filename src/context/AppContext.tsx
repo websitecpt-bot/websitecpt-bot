@@ -30,11 +30,13 @@ import {
 } from '../data/initialData';
 import {
   isSupabaseConfigured,
+  getSupabaseConfigStatus,
   fetchUsersFromSupabase,
   fetchTradesFromSupabase,
   fetchTicketsFromSupabase,
   fetchDepositsFromSupabase,
   fetchWithdrawalsFromSupabase,
+  fetchAuditLogsFromSupabase,
   syncUserToSupabase,
   updateUserBalanceInSupabase,
   updateUserStatusInSupabase,
@@ -44,12 +46,17 @@ import {
   updateDepositStatusInSupabase,
   syncWithdrawalToSupabase,
   updateWithdrawalStatusInSupabase,
+  syncAuditLogToSupabase,
   subscribeToSupabaseRealtime,
   supabaseAuthSignUp,
   supabaseAuthSignIn,
 } from '../lib/supabase';
 
 interface AppContextType {
+  // Supabase Cloud Sync
+  refreshAllFromSupabase: () => Promise<void>;
+  isSupabaseSynced: boolean;
+
   // Current user & Auth
   users: User[];
   currentUser: User;
@@ -419,50 +426,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUser.uid === '100001';
   const activeCoin = coins.find((c) => c.symbol === selectedSymbol) || coins[0];
 
+  const [isSupabaseSynced, setIsSupabaseSynced] = useState<boolean>(() => isSupabaseConfigured());
+
   // Central Supabase Cloud Sync & Realtime Listener
+  const hydrateFromSupabase = async () => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const [cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals, cloudAudit] = await Promise.all([
+        fetchUsersFromSupabase(),
+        fetchTradesFromSupabase(),
+        fetchTicketsFromSupabase(),
+        fetchDepositsFromSupabase(),
+        fetchWithdrawalsFromSupabase(),
+        fetchAuditLogsFromSupabase(),
+      ]);
+
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers((prev) => {
+          const cloudMap = new Map(cloudUsers.map((u) => [u.id, u]));
+          // Keep existing if not in cloud, but cloud takes precedence for balances/status
+          const merged = [...cloudUsers];
+          prev.forEach((u) => {
+            if (!cloudMap.has(u.id)) {
+              merged.push(u);
+            }
+          });
+          return merged;
+        });
+      }
+      if (cloudTrades && cloudTrades.length > 0) {
+        setTrades(cloudTrades);
+      }
+      if (cloudTickets && cloudTickets.length > 0) {
+        setSupportTickets(cloudTickets);
+      }
+      if (cloudDeposits && cloudDeposits.length > 0) {
+        setDepositRequests(cloudDeposits);
+      }
+      if (cloudWithdrawals && cloudWithdrawals.length > 0) {
+        setWithdrawalRequests(cloudWithdrawals);
+      }
+      if (cloudAudit && cloudAudit.length > 0) {
+        setAuditLogs(cloudAudit);
+      }
+      setIsSupabaseSynced(true);
+    } catch (err) {
+      console.warn('[Supabase Cloud Hydration] notice:', err);
+    }
+  };
+
+  const refreshAllFromSupabase = async () => {
+    await hydrateFromSupabase();
+  };
+
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
     let isMounted = true;
-
-    const hydrateFromSupabase = async () => {
-      try {
-        const [cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals] = await Promise.all([
-          fetchUsersFromSupabase(),
-          fetchTradesFromSupabase(),
-          fetchTicketsFromSupabase(),
-          fetchDepositsFromSupabase(),
-          fetchWithdrawalsFromSupabase(),
-        ]);
-
-        if (!isMounted) return;
-
-        if (cloudUsers && cloudUsers.length > 0) {
-          setUsers((prev) => {
-            const existingMap = new Map(cloudUsers.map((u) => [u.id, u]));
-            prev.forEach((u) => {
-              if (!existingMap.has(u.id)) existingMap.set(u.id, u);
-            });
-            return Array.from(existingMap.values());
-          });
-        }
-        if (cloudTrades && cloudTrades.length > 0) {
-          setTrades(cloudTrades);
-        }
-        if (cloudTickets && cloudTickets.length > 0) {
-          setSupportTickets(cloudTickets);
-        }
-        if (cloudDeposits && cloudDeposits.length > 0) {
-          setDepositRequests(cloudDeposits);
-        }
-        if (cloudWithdrawals && cloudWithdrawals.length > 0) {
-          setWithdrawalRequests(cloudWithdrawals);
-        }
-      } catch (err) {
-        console.warn('[Supabase Cloud Hydration] notice:', err);
-      }
-    };
-
     hydrateFromSupabase();
 
     // Subscribe to Postgres Realtime changes
@@ -489,8 +509,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     });
 
+    // Auto-polling interval every 4 seconds to guarantee live updates without manual page refresh
+    const pollTimer = setInterval(() => {
+      if (isMounted) {
+        hydrateFromSupabase();
+      }
+    }, 4000);
+
     return () => {
       isMounted = false;
+      clearInterval(pollTimer);
       if (channel) {
         channel.unsubscribe();
       }
@@ -665,39 +693,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (u) => u.email.toLowerCase() === cleanEmail || u.name.toLowerCase() === cleanName.toLowerCase()
     );
     if (exists) {
-      return { success: false, message: 'This username or email is already registered.' };
+      return { success: false, message: 'This username or email is already registered. Please sign in.' };
     }
 
-    // Generate random 6-digit UID (ensure it doesn't collide)
+    // Generate random 6-digit UID
     let uid = Math.floor(100000 + Math.random() * 900000).toString();
     while (users.some((u) => u.uid === uid)) {
       uid = Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    let newId = `user-${uid}`;
+    let authenticatedUserId = `user-${uid}`;
 
-    // Sync with Supabase Auth if configured
+    // If Supabase Cloud is configured, sync with Supabase Auth
     if (isSupabaseConfigured()) {
       try {
-        const { data: authData } = await supabaseAuthSignUp({
+        const { data: authData, error: authError } = await supabaseAuthSignUp({
           email: cleanEmail,
           password: password || '123456',
           name: cleanName,
           phone: phone || '',
           uid,
         });
-        if (authData?.user?.id) {
-          newId = authData.user.id;
+
+        if (authError) {
+          if (authError.message?.toLowerCase().includes('already registered')) {
+            return {
+              success: false,
+              message: 'This email is already registered. Please sign in with your password.',
+            };
+          }
+          console.warn('[Supabase Auth notice]', authError.message);
+        } else if (authData?.user?.id) {
+          authenticatedUserId = authData.user.id;
         }
       } catch (authErr) {
-        console.warn('Supabase Auth SignUp notice:', authErr);
+        console.warn('[Supabase Auth SignUp notice]', authErr);
       }
     }
 
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     const newUser: User = {
-      id: newId,
+      id: authenticatedUserId,
       uid,
       name: cleanName,
       email: cleanEmail,
@@ -714,13 +751,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastLogin: nowStr,
     };
 
-    setUsers((prev) => [newUser, ...prev]);
-    await syncUserToSupabase(newUser);
+    // If Supabase is active, sync user profile to cloud table
+    if (isSupabaseConfigured()) {
+      try {
+        await syncUserToSupabase(newUser);
+      } catch (err) {
+        console.warn('[Supabase Profile Sync notice]', err);
+      }
+    }
+
+    // Update in-memory state
+    setUsers((prev) => [newUser, ...prev.filter((u) => u.id !== newUser.id)]);
 
     // Automatically create a support welcome ticket for this new trader
     const welcomeTicket: SupportTicket = {
       id: `ticket-${Date.now()}`,
-      userId: newId,
+      userId: authenticatedUserId,
       userName: newUser.name,
       userEmail: newUser.email,
       status: 'answered',
@@ -740,6 +786,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ],
     };
     setSupportTickets((prev) => [welcomeTicket, ...prev]);
+    if (isSupabaseConfigured()) {
+      syncTicketToSupabase(welcomeTicket);
+    }
 
     logAuditAction(
       'NEW_USER_REGISTERED_WITH_REFERRAL',
@@ -756,6 +805,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginUser = async (identifier: string, password?: string) => {
     const clean = identifier.trim().toLowerCase();
+
+    // Refresh from Supabase if configured so latest registered users from all devices are loaded
+    if (isSupabaseConfigured()) {
+      try {
+        const cloudUsers = await fetchUsersFromSupabase();
+        if (cloudUsers && cloudUsers.length > 0) {
+          setUsers(cloudUsers);
+        }
+      } catch (err) {
+        console.warn('Fetch users for login error:', err);
+      }
+    }
+
     let found = users.find(
       (u) =>
         u.name.toLowerCase() === clean ||
@@ -763,28 +825,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         u.uid === clean
     );
 
-    // If not found in current memory and Supabase is configured, fetch fresh
+    // If still not found, try one direct cloud fetch
     if (!found && isSupabaseConfigured()) {
-      try {
-        const cloudUsers = await fetchUsersFromSupabase();
-        if (cloudUsers && cloudUsers.length > 0) {
-          setUsers(cloudUsers);
-          found = cloudUsers.find(
-            (u) =>
-              u.name.toLowerCase() === clean ||
-              u.email.toLowerCase() === clean ||
-              u.uid === clean
-          );
-        }
-      } catch (err) {
-        console.warn('Fetch users for login error:', err);
+      const cloudUsers = await fetchUsersFromSupabase();
+      if (cloudUsers) {
+        setUsers(cloudUsers);
+        found = cloudUsers.find(
+          (u) =>
+            u.name.toLowerCase() === clean ||
+            u.email.toLowerCase() === clean ||
+            u.uid === clean
+        );
       }
     }
 
     if (!found) {
       return {
         success: false,
-        message: 'Account not found. Please verify your username/email or click Create Account.',
+        message: 'Account not found. Please verify your username, email, or UID, or click Create Account.',
       };
     }
 
@@ -792,19 +850,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'This account has been suspended by the administrator.' };
     }
 
-    // Verify password (either with Supabase Auth or direct password check)
+    // Verify password:
     if (password) {
       if (isSupabaseConfigured() && found.email) {
         try {
           await supabaseAuthSignIn(found.email, password);
         } catch {
-          // Fallback to local check
+          // fallback to stored password check
         }
       }
 
       const validPass = found.password || '123456';
       if (password !== validPass) {
-        return { success: false, message: 'Incorrect password. Please verify your credentials.' };
+        return { success: false, message: 'Incorrect password. Please verify and try again.' };
       }
     }
 
@@ -1731,6 +1789,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        refreshAllFromSupabase,
+        isSupabaseSynced,
         users,
         currentUser,
         switchUser,

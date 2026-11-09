@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS public.users (
   last_login TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. TRADES TABLE
+-- 2. PROFILES VIEW (Alias for compatibility with profile schemas)
+CREATE OR REPLACE VIEW public.profiles AS SELECT * FROM public.users;
+
+-- 3. TRADES TABLE
 CREATE TABLE IF NOT EXISTS public.trades (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
@@ -45,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.trades (
   fee NUMERIC(15, 2) DEFAULT 0.00
 );
 
--- 3. SUPPORT TICKETS & MESSAGES TABLE
+-- 4. SUPPORT TICKETS & MESSAGES TABLE
 CREATE TABLE IF NOT EXISTS public.support_tickets (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
@@ -53,12 +56,16 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
   user_email TEXT NOT NULL,
   status TEXT DEFAULT 'pending', -- pending, answered, closed
   unread_admin_count INTEGER DEFAULT 0,
+  unread_user_count INTEGER DEFAULT 0,
   last_message TEXT DEFAULT '',
   last_message_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   messages JSONB DEFAULT '[]'::jsonb
 );
 
--- 4. DEPOSIT REQUESTS TABLE
+-- Alias for support_messages
+CREATE OR REPLACE VIEW public.support_messages AS SELECT * FROM public.support_tickets;
+
+-- 5. DEPOSIT REQUESTS TABLE
 CREATE TABLE IF NOT EXISTS public.deposit_requests (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
@@ -74,7 +81,10 @@ CREATE TABLE IF NOT EXISTS public.deposit_requests (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 5. WITHDRAWAL REQUESTS TABLE
+-- Alias for deposits
+CREATE OR REPLACE VIEW public.deposits AS SELECT * FROM public.deposit_requests;
+
+-- 6. WITHDRAWAL REQUESTS TABLE
 CREATE TABLE IF NOT EXISTS public.withdrawal_requests (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
@@ -88,9 +98,53 @@ CREATE TABLE IF NOT EXISTS public.withdrawal_requests (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Disable Row Level Security (RLS) for seamless prototype access, or enable with open policies
+-- Alias for withdrawals
+CREATE OR REPLACE VIEW public.withdrawals AS SELECT * FROM public.withdrawal_requests;
+
+-- 7. AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id TEXT PRIMARY KEY,
+  admin_name TEXT NOT NULL,
+  admin_id TEXT DEFAULT 'admin-01',
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  details TEXT DEFAULT '',
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 8. Disable Row Level Security (RLS) for direct client prototyping
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deposit_requests DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.withdrawal_requests DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+
+-- 9. Enable Realtime Publications for all tables
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.users;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.trades;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.support_tickets;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.deposit_requests;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.withdrawal_requests;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+END $$;

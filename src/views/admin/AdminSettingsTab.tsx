@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 export const AdminSettingsTab: React.FC = () => {
   const { systemSettings, updateSystemSettings, resetAllData } = useApp();
@@ -172,6 +173,80 @@ export const AdminSettingsTab: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Cloud Database (Supabase) Connection Management */}
+      <div className="bg-[#121622] border border-[#21293c] rounded-2xl p-6 shadow-xl space-y-4 text-xs">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+              <span>Supabase Cloud Database Connection (Multi-Device Sync)</span>
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Sync all registered users, trades, deposits, and balances across all mobile devices and desktop computers worldwide.
+            </p>
+          </div>
+          <span
+            className={`px-2.5 py-1 rounded-full text-[10px] font-mono border ${
+              isSupabaseConfigured()
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+            }`}
+          >
+            {isSupabaseConfigured() ? '• Cloud Connected' : '• Pending Configuration'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          <div>
+            <label className="text-slate-300 font-medium block mb-1">Supabase Project URL</label>
+            <input
+              type="text"
+              placeholder="https://xyzcompany.supabase.co"
+              defaultValue={typeof window !== 'undefined' ? localStorage.getItem('cpt_supabase_url') || import.meta.env.VITE_SUPABASE_URL || '' : ''}
+              id="cpt_sb_url_input"
+              className="w-full bg-[#161c2a] border border-[#242e44] focus:border-cyan-400 rounded-xl px-4 py-2 text-white font-mono text-xs outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-300 font-medium block mb-1">Supabase Public Anon Key</label>
+            <input
+              type="password"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              defaultValue={typeof window !== 'undefined' ? localStorage.getItem('cpt_supabase_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || '' : ''}
+              id="cpt_sb_key_input"
+              className="w-full bg-[#161c2a] border border-[#242e44] focus:border-cyan-400 rounded-xl px-4 py-2 text-white font-mono text-xs outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              const urlEl = document.getElementById('cpt_sb_url_input') as HTMLInputElement | null;
+              const keyEl = document.getElementById('cpt_sb_key_input') as HTMLInputElement | null;
+              const url = urlEl?.value?.trim() || '';
+              const key = keyEl?.value?.trim() || '';
+              if (url && key) {
+                localStorage.setItem('cpt_supabase_url', url);
+                localStorage.setItem('cpt_supabase_key', key);
+                setSavedFeedback('Supabase credentials saved. Reloading app to connect...');
+                setTimeout(() => window.location.reload(), 800);
+              } else {
+                localStorage.removeItem('cpt_supabase_url');
+                localStorage.removeItem('cpt_supabase_key');
+                setSavedFeedback('Custom credentials cleared.');
+                setTimeout(() => window.location.reload(), 800);
+              }
+            }}
+            className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold px-4 py-2 rounded-xl transition-colors cursor-pointer"
+          >
+            Save & Connect Database
+          </button>
+        </div>
+      </div>
 
       {/* Danger Zone */}
       <div className="bg-[#1a1215] border border-rose-900/40 rounded-2xl p-6 shadow-xl space-y-3">

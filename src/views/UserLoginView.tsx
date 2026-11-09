@@ -14,6 +14,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { OFFICIAL_REFERRAL_CODES } from '../data/initialData';
+import { CptLogo } from '../components/CptLogo';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 export const UserLoginView: React.FC = () => {
   const { loginUser, registerUser, setIsSupportOpen, users } = useApp();
@@ -164,16 +166,11 @@ export const UserLoginView: React.FC = () => {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] bg-[#0c1f44]/40 rounded-full blur-[100px] pointer-events-none"></div>
 
       <div className="w-full max-w-[440px] relative z-10 text-center space-y-5">
-        {/* Top Gold Circular Badge matching user screenshot */}
+        {/* Top Official Logo matching main website Header exactly */}
         <div className="flex flex-col items-center justify-center">
-          <div className="w-14 h-14 rounded-full border-2 border-amber-500/80 p-0.5 mx-auto flex items-center justify-center bg-[#070b14] shadow-[0_0_20px_rgba(245,166,35,0.35)]">
-            <div className="w-full h-full rounded-full border border-amber-400/60 flex flex-col items-center justify-center text-center p-1">
-              <span className="text-[9px] font-black text-amber-400 leading-tight tracking-wider">CPT</span>
-              <span className="text-[6.5px] font-extrabold text-amber-300/90 leading-none tracking-widest">MARKETS</span>
-            </div>
-          </div>
+          <CptLogo size={46} showText={true} className="justify-center" />
 
-          <h1 className="text-2xl font-black text-amber-400 tracking-tight mt-3">
+          <h1 className="text-2xl font-black text-amber-400 tracking-tight mt-4">
             {mode === 'signin' ? 'Sign In' : 'Create Account'}
           </h1>
           <p className="text-xs text-slate-400 mt-1">

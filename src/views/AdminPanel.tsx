@@ -29,6 +29,7 @@ import {
   X,
   ArrowLeft,
   Key,
+  RefreshCw,
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 
@@ -44,10 +45,18 @@ export const AdminPanel: React.FC = () => {
     isSuperAdmin,
     currentUser,
     switchUser,
+    refreshAllFromSupabase,
   } = useApp();
 
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<string>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualSync = async () => {
+    setIsRefreshing(true);
+    await refreshAllFromSupabase();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   // Admin security authentication — username and password kept strictly confidential
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -272,16 +281,27 @@ export const AdminPanel: React.FC = () => {
           </span>
 
           {isSupabaseConfigured() ? (
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-300 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              Supabase Cloud: Synced
-            </span>
+            <div className="hidden md:flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-300 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Supabase Live (Auto-sync 4s)
+              </span>
+              <button
+                onClick={handleManualSync}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#142033] hover:bg-[#1a2c47] border border-cyan-500/30 text-[10px] text-cyan-300 transition-colors"
+                title="Fetch latest users & transactions from Supabase"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
+                <span>{isRefreshing ? 'Syncing...' : 'Sync Now'}</span>
+              </button>
+            </div>
           ) : (
             <span
-              className="hidden md:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] text-cyan-300 font-mono"
+              className="hidden md:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-mono"
               title="Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel settings to activate global cloud sync"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
               Supabase: Connect in Vercel
             </span>
           )}

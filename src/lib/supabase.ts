@@ -1,22 +1,74 @@
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
-import { User, Trade, SupportTicket, DepositRequest, WithdrawalRequest } from '../types';
+import { User, Trade, SupportTicket, DepositRequest, WithdrawalRequest, AuditLog } from '../types';
 
 // Read public credentials from Vite environment variables (Never service-role key!)
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const getSupabaseUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('cpt_supabase_url');
+    if (saved) return saved.trim();
+  }
+  return (
+    import.meta.env.VITE_SUPABASE_URL ||
+    (typeof window !== 'undefined' && (window as any).__VITE_SUPABASE_URL) ||
+    ''
+  ).trim();
+};
+
+const getSupabaseAnonKey = (): string => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('cpt_supabase_key');
+    if (saved) return saved.trim();
+  }
+  return (
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    (typeof window !== 'undefined' && (window as any).__VITE_SUPABASE_ANON_KEY) ||
+    ''
+  ).trim();
+};
+
+export const setCustomSupabaseCredentials = (url: string, key: string) => {
+  if (typeof window !== 'undefined') {
+    if (url && key) {
+      localStorage.setItem('cpt_supabase_url', url.trim());
+      localStorage.setItem('cpt_supabase_key', key.trim());
+    } else {
+      localStorage.removeItem('cpt_supabase_url');
+      localStorage.removeItem('cpt_supabase_key');
+    }
+  }
+};
 
 export const isSupabaseConfigured = (): boolean => {
+  const url = getSupabaseUrl();
+  const key = getSupabaseAnonKey();
   return Boolean(
-    supabaseUrl &&
-    supabaseAnonKey &&
-    supabaseUrl.startsWith('https://') &&
-    supabaseAnonKey.length > 20
+    url &&
+    key &&
+    url.startsWith('https://') &&
+    key.length > 20
   );
+};
+
+export const getSupabaseConfigStatus = () => {
+  const url = getSupabaseUrl();
+  const key = getSupabaseAnonKey();
+  const hasUrl = Boolean(url && url.startsWith('https://'));
+  const hasKey = Boolean(key && key.length > 20);
+  return {
+    isConfigured: hasUrl && hasKey,
+    hasUrl,
+    hasKey,
+    urlPreview: url ? url.replace(/^(https:\/\/[^.]+).*/, '$1.supabase.co') : 'missing',
+  };
 };
 
 // Initialize public Supabase client
 export const supabase = isSupabaseConfigured()
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
       realtime: {
         params: {
           eventsPerSecond: 10,
@@ -34,23 +86,30 @@ export const getSupabaseClient = () => supabase;
 export const fetchUsersFromSupabase = async (): Promise<User[] | null> => {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from('users').select('*');
-    if (error) {
-      console.warn('Supabase fetchUsers error:', error.message);
+    // Try 'users' table first
+    let res = await supabase.from('users').select('*');
+    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
+      // Fallback to 'profiles' table if user named it profiles
+      res = await supabase.from('profiles').select('*');
+    }
+
+    if (res.error) {
+      console.warn('[Supabase fetchUsers] error:', res.error.message);
       return null;
     }
-    if (!data) return null;
-    return data.map((row: any) => ({
+    if (!res.data) return null;
+
+    return res.data.map((row: any) => ({
       id: row.id,
-      uid: row.uid,
-      name: row.name,
-      email: row.email,
+      uid: row.uid || row.id?.slice(0, 6) || '100001',
+      name: row.name || row.full_name || row.username || 'Trader',
+      email: row.email || '',
       phone: row.phone || '',
-      tradingBalance: Number(row.trading_balance || 0),
-      fundingBalance: Number(row.funding_balance || 0),
+      tradingBalance: Number(row.trading_balance ?? row.balance ?? 0),
+      fundingBalance: Number(row.funding_balance ?? 0),
       status: (row.status === 'suspended' ? 'suspended' : 'active') as 'active' | 'suspended',
-      isOnline: Boolean(row.is_online),
-      avatar: row.avatar || '',
+      isOnline: Boolean(row.is_online ?? true),
+      avatar: row.avatar || row.avatar_url || '',
       createdAt: row.created_at || new Date().toISOString(),
       lastLogin: row.last_login || new Date().toISOString(),
       referredByUid: row.referred_by_uid || undefined,
@@ -58,7 +117,7 @@ export const fetchUsersFromSupabase = async (): Promise<User[] | null> => {
       password: row.password || '123456',
     }));
   } catch (err) {
-    console.warn('Supabase fetchUsers exception:', err);
+    console.warn('[Supabase fetchUsers] exception:', err);
     return null;
   }
 };
@@ -68,7 +127,7 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
   try {
     const { data, error } = await supabase.from('trades').select('*').order('opened_at', { ascending: false });
     if (error) {
-      console.warn('Supabase fetchTrades error:', error.message);
+      console.warn('[Supabase fetchTrades] error:', error.message);
       return null;
     }
     if (!data) return null;
@@ -94,7 +153,7 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
       fee: Number(row.fee || 0),
     }));
   } catch (err) {
-    console.warn('Supabase fetchTrades exception:', err);
+    console.warn('[Supabase fetchTrades] exception:', err);
     return null;
   }
 };
@@ -102,18 +161,21 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
 export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null> => {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from('support_tickets').select('*');
-    if (error) {
-      console.warn('Supabase fetchTickets error:', error.message);
+    let res = await supabase.from('support_tickets').select('*');
+    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
+      res = await supabase.from('support_messages').select('*');
+    }
+    if (res.error) {
+      console.warn('[Supabase fetchTickets] error:', res.error.message);
       return null;
     }
-    if (!data) return null;
-    return data.map((row: any) => ({
+    if (!res.data) return null;
+    return res.data.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
       userName: row.user_name,
-      userEmail: row.user_email,
-      status: row.status as 'pending' | 'answered' | 'closed',
+      userEmail: row.user_email || '',
+      status: (row.status || 'pending') as 'pending' | 'answered' | 'closed',
       lastMessage: row.last_message || '',
       lastMessageTime: row.last_message_time || new Date().toISOString(),
       unreadAdminCount: Number(row.unread_admin_count || 0),
@@ -121,7 +183,7 @@ export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null
       messages: Array.isArray(row.messages) ? row.messages : [],
     }));
   } catch (err) {
-    console.warn('Supabase fetchTickets exception:', err);
+    console.warn('[Supabase fetchTickets] exception:', err);
     return null;
   }
 };
@@ -129,25 +191,28 @@ export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null
 export const fetchDepositsFromSupabase = async (): Promise<DepositRequest[] | null> => {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from('deposit_requests').select('*').order('created_at', { ascending: false });
-    if (error) {
-      console.warn('Supabase fetchDeposits error:', error.message);
+    let res = await supabase.from('deposit_requests').select('*').order('created_at', { ascending: false });
+    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
+      res = await supabase.from('deposits').select('*').order('created_at', { ascending: false });
+    }
+    if (res.error) {
+      console.warn('[Supabase fetchDeposits] error:', res.error.message);
       return null;
     }
-    if (!data) return null;
-    return data.map((row: any) => ({
+    if (!res.data) return null;
+    return res.data.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
       userName: row.user_name,
       amount: Number(row.amount || 0),
       paymentMethod: row.payment_method || 'USDT',
       network: row.network || 'TRC-20',
-      txid: row.txid,
-      status: row.status as 'pending' | 'approved' | 'rejected',
+      txid: row.txid || '',
+      status: (row.status || 'pending') as 'pending' | 'approved' | 'rejected',
       timestamp: row.created_at,
     }));
   } catch (err) {
-    console.warn('Supabase fetchDeposits exception:', err);
+    console.warn('[Supabase fetchDeposits] exception:', err);
     return null;
   }
 };
@@ -155,27 +220,49 @@ export const fetchDepositsFromSupabase = async (): Promise<DepositRequest[] | nu
 export const fetchWithdrawalsFromSupabase = async (): Promise<WithdrawalRequest[] | null> => {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from('withdrawal_requests').select('*').order('created_at', { ascending: false });
-    if (error) {
-      console.warn('Supabase fetchWithdrawals error:', error.message);
+    let res = await supabase.from('withdrawal_requests').select('*').order('created_at', { ascending: false });
+    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
+      res = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
+    }
+    if (res.error) {
+      console.warn('[Supabase fetchWithdrawals] error:', res.error.message);
       return null;
     }
-    if (!data) return null;
-    return data.map((row: any) => ({
+    if (!res.data) return null;
+    return res.data.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
       userName: row.user_name,
       amount: Number(row.amount || 0),
       accountHolderName: row.user_name,
-      bankOrAddress: row.bank_or_address,
-      network: row.network,
-      status: row.status as 'pending' | 'approved' | 'rejected',
+      bankOrAddress: row.bank_or_address || '',
+      network: row.network || 'USDT',
+      status: (row.status || 'pending') as 'pending' | 'approved' | 'rejected',
       timestamp: row.created_at,
       withdrawalType: (row.withdrawal_type || 'USD') as 'USD' | 'USDT',
       notes: row.notes || '',
     }));
   } catch (err) {
-    console.warn('Supabase fetchWithdrawals exception:', err);
+    console.warn('[Supabase fetchWithdrawals] exception:', err);
+    return null;
+  }
+};
+
+export const fetchAuditLogsFromSupabase = async (): Promise<AuditLog[] | null> => {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(100);
+    if (error) return null;
+    return data.map((row: any) => ({
+      id: row.id,
+      adminName: row.admin_name,
+      adminId: row.admin_id,
+      action: row.action,
+      target: row.target,
+      details: row.details,
+      timestamp: row.timestamp,
+    }));
+  } catch {
     return null;
   }
 };
@@ -184,10 +271,12 @@ export const fetchWithdrawalsFromSupabase = async (): Promise<WithdrawalRequest[
 // 2. Cloud Database Operations (Upserts/Sync)
 // ==========================================
 
-export const syncUserToSupabase = async (user: User) => {
-  if (!supabase) return;
+export const syncUserToSupabase = async (user: User): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) {
+    return { success: false, error: 'Supabase client is not configured' };
+  }
   try {
-    await supabase.from('users').upsert({
+    const payload = {
       id: user.id,
       uid: user.uid,
       name: user.name,
@@ -203,19 +292,43 @@ export const syncUserToSupabase = async (user: User) => {
       avatar: user.avatar || '',
       created_at: user.createdAt,
       last_login: user.lastLogin,
-    });
-  } catch (err) {
-    console.warn('Supabase syncUserToSupabase notice:', err);
+    };
+
+    let { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
+
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      const fallback = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
+      if (fallback.error) {
+        return { success: false, error: fallback.error.message };
+      }
+      return { success: true };
+    }
+
+    if (error) {
+      console.error('[Supabase syncUserToSupabase] error:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[Supabase syncUserToSupabase] exception:', err);
+    return { success: false, error: err?.message || 'Network exception saving user profile' };
   }
 };
 
 export const updateUserBalanceInSupabase = async (userId: string, trading: number, funding: number) => {
   if (!supabase) return;
   try {
-    await supabase.from('users').update({
+    let { error } = await supabase.from('users').update({
       trading_balance: trading,
       funding_balance: funding,
     }).eq('id', userId);
+
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      await supabase.from('profiles').update({
+        trading_balance: trading,
+        funding_balance: funding,
+      }).eq('id', userId);
+    }
   } catch (err) {
     console.warn('Supabase updateUserBalance notice:', err);
   }
@@ -224,18 +337,19 @@ export const updateUserBalanceInSupabase = async (userId: string, trading: numbe
 export const updateUserStatusInSupabase = async (userId: string, status: 'active' | 'suspended') => {
   if (!supabase) return;
   try {
-    await supabase.from('users').update({
-      status: status,
-    }).eq('id', userId);
+    let { error } = await supabase.from('users').update({ status }).eq('id', userId);
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      await supabase.from('profiles').update({ status }).eq('id', userId);
+    }
   } catch (err) {
     console.warn('Supabase updateUserStatus notice:', err);
   }
 };
 
-export const syncTradeToSupabase = async (trade: Trade) => {
-  if (!supabase) return;
+export const syncTradeToSupabase = async (trade: Trade): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Not configured' };
   try {
-    await supabase.from('trades').upsert({
+    const { error } = await supabase.from('trades').upsert({
       id: trade.id,
       user_id: trade.userId,
       user_name: trade.userName,
@@ -255,16 +369,19 @@ export const syncTradeToSupabase = async (trade: Trade) => {
       pnl: trade.pnl,
       pnl_percent: trade.pnlPercent,
       fee: trade.fee,
-    });
-  } catch (err) {
-    console.warn('Supabase syncTradeToSupabase notice:', err);
+    }, { onConflict: 'id' });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
   }
 };
 
-export const syncTicketToSupabase = async (ticket: SupportTicket) => {
-  if (!supabase) return;
+export const syncTicketToSupabase = async (ticket: SupportTicket): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Not configured' };
   try {
-    await supabase.from('support_tickets').upsert({
+    const payload = {
       id: ticket.id,
       user_id: ticket.userId,
       user_name: ticket.userName,
@@ -273,16 +390,24 @@ export const syncTicketToSupabase = async (ticket: SupportTicket) => {
       last_message: ticket.lastMessage,
       last_message_time: ticket.lastMessageTime,
       messages: ticket.messages,
-    });
-  } catch (err) {
-    console.warn('Supabase syncTicketToSupabase notice:', err);
+    };
+    let { error } = await supabase.from('support_tickets').upsert(payload, { onConflict: 'id' });
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      const fb = await supabase.from('support_messages').upsert(payload, { onConflict: 'id' });
+      if (fb.error) return { success: false, error: fb.error.message };
+      return { success: true };
+    }
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
   }
 };
 
-export const syncDepositToSupabase = async (deposit: DepositRequest) => {
-  if (!supabase) return;
+export const syncDepositToSupabase = async (deposit: DepositRequest): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Not configured' };
   try {
-    await supabase.from('deposit_requests').upsert({
+    const payload = {
       id: deposit.id,
       user_id: deposit.userId,
       user_name: deposit.userName,
@@ -292,25 +417,36 @@ export const syncDepositToSupabase = async (deposit: DepositRequest) => {
       txid: deposit.txid,
       status: deposit.status,
       created_at: deposit.timestamp,
-    });
-  } catch (err) {
-    console.warn('Supabase syncDepositToSupabase notice:', err);
+    };
+    let { error } = await supabase.from('deposit_requests').upsert(payload, { onConflict: 'id' });
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      const fb = await supabase.from('deposits').upsert(payload, { onConflict: 'id' });
+      if (fb.error) return { success: false, error: fb.error.message };
+      return { success: true };
+    }
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
   }
 };
 
 export const updateDepositStatusInSupabase = async (depositId: string, status: string) => {
   if (!supabase) return;
   try {
-    await supabase.from('deposit_requests').update({ status }).eq('id', depositId);
+    let { error } = await supabase.from('deposit_requests').update({ status }).eq('id', depositId);
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      await supabase.from('deposits').update({ status }).eq('id', depositId);
+    }
   } catch (err) {
     console.warn('Supabase updateDepositStatus notice:', err);
   }
 };
 
-export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest) => {
-  if (!supabase) return;
+export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Not configured' };
   try {
-    await supabase.from('withdrawal_requests').upsert({
+    const payload = {
       id: withdrawal.id,
       user_id: withdrawal.userId,
       user_name: withdrawal.userName,
@@ -321,18 +457,46 @@ export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest) =>
       status: withdrawal.status,
       notes: withdrawal.notes || '',
       created_at: withdrawal.timestamp,
-    });
-  } catch (err) {
-    console.warn('Supabase syncWithdrawalToSupabase notice:', err);
+    };
+    let { error } = await supabase.from('withdrawal_requests').upsert(payload, { onConflict: 'id' });
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      const fb = await supabase.from('withdrawals').upsert(payload, { onConflict: 'id' });
+      if (fb.error) return { success: false, error: fb.error.message };
+      return { success: true };
+    }
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
   }
 };
 
 export const updateWithdrawalStatusInSupabase = async (withdrawalId: string, status: string) => {
   if (!supabase) return;
   try {
-    await supabase.from('withdrawal_requests').update({ status }).eq('id', withdrawalId);
+    let { error } = await supabase.from('withdrawal_requests').update({ status }).eq('id', withdrawalId);
+    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
+      await supabase.from('withdrawals').update({ status }).eq('id', withdrawalId);
+    }
   } catch (err) {
     console.warn('Supabase updateWithdrawalStatus notice:', err);
+  }
+};
+
+export const syncAuditLogToSupabase = async (log: AuditLog) => {
+  if (!supabase) return;
+  try {
+    await supabase.from('audit_logs').insert({
+      id: log.id,
+      admin_name: log.adminName,
+      admin_id: log.adminId,
+      action: log.action,
+      target: log.target,
+      details: log.details,
+      timestamp: log.timestamp,
+    });
+  } catch {
+    // Audit logs non-critical
   }
 };
 
@@ -358,16 +522,28 @@ export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): Realtim
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
         handlers.onUserUpdate?.();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        handlers.onUserUpdate?.();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, () => {
         handlers.onTradeUpdate?.();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => {
         handlers.onTicketUpdate?.();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => {
+        handlers.onTicketUpdate?.();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deposit_requests' }, () => {
         handlers.onDepositUpdate?.();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deposits' }, () => {
+        handlers.onDepositUpdate?.();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, () => {
+        handlers.onWithdrawalUpdate?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => {
         handlers.onWithdrawalUpdate?.();
       })
       .subscribe((status) => {
@@ -393,8 +569,15 @@ export const supabaseAuthSignUp = async (params: {
   name: string;
   phone?: string;
   uid: string;
-}) => {
-  if (!supabase) return { data: null, error: null };
+}): Promise<{ data: any; error: { message: string } | null }> => {
+  if (!supabase) {
+    return {
+      data: null,
+      error: {
+        message: 'Supabase client is not initialized. Please verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel.',
+      },
+    };
+  }
   try {
     const { data, error } = await supabase.auth.signUp({
       email: params.email,
@@ -407,23 +590,43 @@ export const supabaseAuthSignUp = async (params: {
         },
       },
     });
-    return { data, error };
+
+    if (error) {
+      return { data: null, error: { message: error.message } };
+    }
+
+    return { data, error: null };
   } catch (err: any) {
-    console.warn('supabaseAuthSignUp exception:', err);
-    return { data: null, error: err };
+    console.warn('[Supabase Auth SignUp] exception:', err);
+    return { data: null, error: { message: err?.message || 'Network error during Supabase Auth registration' } };
   }
 };
 
-export const supabaseAuthSignIn = async (email: string, password?: string) => {
-  if (!supabase) return { data: null, error: null };
+export const supabaseAuthSignIn = async (
+  email: string,
+  password?: string
+): Promise<{ data: any; error: { message: string } | null }> => {
+  if (!supabase) {
+    return {
+      data: null,
+      error: {
+        message: 'Supabase client is not initialized. Please verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel.',
+      },
+    };
+  }
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password: password || '123456',
     });
-    return { data, error };
+
+    if (error) {
+      return { data: null, error: { message: error.message } };
+    }
+
+    return { data, error: null };
   } catch (err: any) {
-    console.warn('supabaseAuthSignIn exception:', err);
-    return { data: null, error: err };
+    console.warn('[Supabase Auth SignIn] exception:', err);
+    return { data: null, error: { message: err?.message || 'Network error during Supabase Auth login' } };
   }
 };

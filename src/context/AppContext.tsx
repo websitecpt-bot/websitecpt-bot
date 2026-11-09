@@ -593,7 +593,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const finalReturn = Math.max(0, t.margin + pnl);
             payouts.push({ userId: t.userId, returnAmount: finalReturn });
 
-            return {
+            const closedTradeItem: Trade = {
               ...t,
               currentPrice: curPrice,
               exitPrice: curPrice,
@@ -602,6 +602,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               status: 'CLOSED' as const,
               closedAt: now.toISOString(),
             };
+            if (isSupabaseConfigured()) {
+              syncTradeToSupabase(closedTradeItem).catch((e) => console.warn('Trade auto-close sync notice:', e));
+            }
+            return closedTradeItem;
           }
 
           return {
@@ -1112,6 +1116,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTrades((prev) => [newTrade, ...prev]);
+    if (isSupabaseConfigured()) {
+      syncTradeToSupabase(newTrade).catch((err) => console.warn('Trade sync notice:', err));
+      updateUserBalanceInSupabase(
+        currentUser.id,
+        Number((currentUser.tradingBalance - totalDeduction).toFixed(2)),
+        currentUser.fundingBalance
+      );
+    }
     return { success: true, message: `Trade opened successfully for ${symbol}!` };
   };
 
@@ -1131,30 +1143,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const pnlPercent = (pnl / trade.margin) * 100;
     const finalReturn = Math.max(0, trade.margin + pnl);
 
+    const updatedBal = Number((currentUser.tradingBalance + finalReturn).toFixed(2));
+
     // Return to user
     setUsers((prev) =>
       prev.map((u) =>
         u.id === trade.userId
-          ? { ...u, tradingBalance: Number((u.tradingBalance + finalReturn).toFixed(2)) }
+          ? { ...u, tradingBalance: updatedBal }
           : u
       )
     );
 
+    const closedTrade: Trade = {
+      ...trade,
+      status: 'CLOSED',
+      exitPrice: curPrice,
+      pnl: Number(pnl.toFixed(2)),
+      pnlPercent: Number(pnlPercent.toFixed(2)),
+      closedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    };
+
     // Mark trade closed
     setTrades((prev) =>
-      prev.map((t) =>
-        t.id === tradeId
-          ? {
-              ...t,
-              status: 'CLOSED',
-              exitPrice: curPrice,
-              pnl: Number(pnl.toFixed(2)),
-              pnlPercent: Number(pnlPercent.toFixed(2)),
-              closedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-            }
-          : t
-      )
+      prev.map((t) => (t.id === tradeId ? closedTrade : t))
     );
+
+    if (isSupabaseConfigured()) {
+      syncTradeToSupabase(closedTrade).catch((err) => console.warn('Trade close sync notice:', err));
+      updateUserBalanceInSupabase(trade.userId, updatedBal, currentUser.fundingBalance);
+    }
   };
 
   // Support System
@@ -1179,6 +1196,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     let isFirstUserMessage = false;
+    let ticketToSync: SupportTicket | null = null;
 
     setSupportTickets((prev) => {
       const userTickets = prev.filter((t) => t.userId === currentUser.id);
@@ -1189,19 +1207,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!hadPriorUserMessage) {
           isFirstUserMessage = true;
         }
-        return prev.map((t) =>
-          t.id === activeTicket.id
-            ? {
-                ...t,
-                status: 'pending',
-                isSessionClosed: false,
-                lastMessage: displaySummary,
-                lastMessageTime: nowStr,
-                unreadAdminCount: t.unreadAdminCount + 1,
-                messages: [...t.messages, newMsg],
-              }
-            : t
-        );
+        const updatedTicket: SupportTicket = {
+          ...activeTicket,
+          status: 'pending',
+          isSessionClosed: false,
+          lastMessage: displaySummary,
+          lastMessageTime: nowStr,
+          unreadAdminCount: activeTicket.unreadAdminCount + 1,
+          messages: [...activeTicket.messages, newMsg],
+        };
+        ticketToSync = updatedTicket;
+        return prev.map((t) => (t.id === activeTicket.id ? updatedTicket : t));
       } else {
         isFirstUserMessage = true;
         const newTicket: SupportTicket = {
@@ -1217,9 +1233,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           unreadUserCount: 0,
           messages: [newMsg],
         };
+        ticketToSync = newTicket;
         return [newTicket, ...prev];
       }
     });
+
+    if (ticketToSync && isSupabaseConfigured()) {
+      syncTicketToSupabase(ticketToSync).catch((e) => console.warn('User ticket sync notice:', e));
+    }
 
     // Send single automated initial acknowledgment only on customer's first message
     if (isFirstUserMessage) {
@@ -1238,17 +1259,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const userTickets = prev.filter((t) => t.userId === currentUser.id);
           const activeTicket = userTickets[0];
           if (!activeTicket) return prev;
-          return prev.map((t) =>
-            t.id === activeTicket.id
-              ? {
-                  ...t,
-                  lastMessage: botReply.text,
-                  lastMessageTime: replyNowStr,
-                  unreadUserCount: t.unreadUserCount + 1,
-                  messages: [...t.messages, botReply],
-                }
-              : t
-          );
+          const withBotReply = {
+            ...activeTicket,
+            lastMessage: botReply.text,
+            lastMessageTime: replyNowStr,
+            unreadUserCount: activeTicket.unreadUserCount + 1,
+            messages: [...activeTicket.messages, botReply],
+          };
+          if (isSupabaseConfigured()) {
+            syncTicketToSupabase(withBotReply).catch((e) => console.warn('Bot ack sync notice:', e));
+          }
+          return prev.map((t) => (t.id === activeTicket.id ? withBotReply : t));
         });
       }, 1200);
     }
@@ -1283,6 +1304,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setSupportTickets((prev) => [newTicket, ...prev]);
+    if (isSupabaseConfigured()) {
+      syncTicketToSupabase(newTicket).catch((e) => console.warn('New ticket sync notice:', e));
+    }
 
     logAuditAction(
       'NEW_SUPPORT_TICKET_STARTED',
@@ -1304,6 +1328,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     const targetTicket = supportTickets.find((t) => t.id === ticketId);
+    if (targetTicket && isSupabaseConfigured()) {
+      syncTicketToSupabase({ ...targetTicket, status: 'closed', isSessionClosed: true }).catch((e) => console.warn('Close ticket sync notice:', e));
+    }
     logAuditAction(
       'SUPPORT_SESSION_CLOSED',
       targetTicket ? `${targetTicket.userName} (${targetTicket.userId})` : ticketId,
@@ -1358,10 +1385,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachmentType: attachment?.type,
     };
 
+    let replyTicketToSync: SupportTicket | null = null;
     setSupportTickets((prev) =>
       prev.map((t) => {
         if (t.id === ticketId) {
-          return {
+          const updated: SupportTicket = {
             ...t,
             status: 'answered',
             isSessionClosed: false,
@@ -1371,10 +1399,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             unreadUserCount: t.unreadUserCount + 1,
             messages: [...t.messages, newMsg],
           };
+          replyTicketToSync = updated;
+          return updated;
         }
         return t;
       })
     );
+
+    if (replyTicketToSync && isSupabaseConfigured()) {
+      syncTicketToSupabase(replyTicketToSync).catch((e) => console.warn('Admin reply sync notice:', e));
+    }
 
     const ticket = supportTickets.find((t) => t.id === ticketId);
     logAuditAction(

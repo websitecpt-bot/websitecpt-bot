@@ -387,6 +387,8 @@ export const syncTicketToSupabase = async (ticket: SupportTicket): Promise<{ suc
       user_name: ticket.userName,
       user_email: ticket.userEmail,
       status: ticket.status,
+      unread_admin_count: ticket.unreadAdminCount || 0,
+      unread_user_count: ticket.unreadUserCount || 0,
       last_message: ticket.lastMessage,
       last_message_time: ticket.lastMessageTime,
       messages: ticket.messages,
@@ -416,6 +418,7 @@ export const syncDepositToSupabase = async (deposit: DepositRequest): Promise<{ 
       payment_method: deposit.paymentMethod,
       txid: deposit.txid,
       status: deposit.status,
+      note: deposit.note || '',
       created_at: deposit.timestamp,
     };
     let { error } = await supabase.from('deposit_requests').upsert(payload, { onConflict: 'id' });
@@ -450,6 +453,7 @@ export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest): P
       id: withdrawal.id,
       user_id: withdrawal.userId,
       user_name: withdrawal.userName,
+      account_holder_name: withdrawal.accountHolderName || withdrawal.userName,
       amount: withdrawal.amount,
       withdrawal_type: withdrawal.withdrawalType,
       bank_or_address: withdrawal.bankOrAddress,

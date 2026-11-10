@@ -151,16 +151,6 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
       pnl: Number(row.pnl || 0),
       pnlPercent: Number(row.pnl_percent || 0),
       fee: Number(row.fee || 0),
-      isPaperTrade: Boolean(row.is_paper_trade),
-      qaOverrideMode: row.qa_override_mode === 'locked' || row.qa_override_mode === 'target_profit'
-        ? row.qa_override_mode
-        : undefined,
-      qaLockedExitPrice: row.qa_locked_exit_price != null ? Number(row.qa_locked_exit_price) : undefined,
-      qaTargetProfit: row.qa_target_profit != null ? Number(row.qa_target_profit) : undefined,
-      qaTargetExitPrice: row.qa_target_exit_price != null ? Number(row.qa_target_exit_price) : undefined,
-      qaStartPnl: row.qa_start_pnl != null ? Number(row.qa_start_pnl) : undefined,
-      qaOverrideStartedAt: row.qa_override_started_at || undefined,
-      qaLastPriceUpdateAt: row.qa_last_price_update_at || undefined,
     }));
   } catch (err) {
     console.warn('[Supabase fetchTrades] exception:', err);
@@ -420,14 +410,6 @@ export const syncTradeToSupabase = async (trade: Trade): Promise<{ success: bool
       pnl: trade.pnl,
       pnl_percent: trade.pnlPercent,
       fee: trade.fee,
-      is_paper_trade: Boolean(trade.isPaperTrade),
-      qa_override_mode: trade.qaOverrideMode || null,
-      qa_locked_exit_price: trade.qaLockedExitPrice ?? null,
-      qa_target_profit: trade.qaTargetProfit ?? null,
-      qa_target_exit_price: trade.qaTargetExitPrice ?? null,
-      qa_start_pnl: trade.qaStartPnl ?? null,
-      qa_override_started_at: trade.qaOverrideStartedAt || null,
-      qa_last_price_update_at: trade.qaLastPriceUpdateAt || null,
     }, { onConflict: 'id' });
 
     if (error) return { success: false, error: error.message };

@@ -45,6 +45,7 @@ export const AccountView: React.FC = () => {
     updateUserAvatar,
     clientAgreement,
     changePassword,
+    systemSettings,
   } = useApp();
 
   const [activeSubView, setActiveSubView] = useState<

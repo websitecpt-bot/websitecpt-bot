@@ -29,10 +29,19 @@ export const AdminWithdrawalsTab: React.FC = () => {
     return matchesFilter && matchesSearch;
   });
 
-  const handleConfirmReject = (e: React.FormEvent) => {
+  const handleConfirmReject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rejectModalWth) return;
-    rejectWithdrawal(rejectModalWth.id, rejectReason || 'Withdrawal canceled by administrator.');
+
+    const saved = await rejectWithdrawal(
+      rejectModalWth.id,
+      rejectReason || 'Withdrawal canceled by administrator.'
+    );
+    if (!saved) {
+      window.alert('The rejection could not be saved to Supabase. The request was left unchanged.');
+      return;
+    }
+
     setRejectModalWth(null);
     setRejectReason('');
   };

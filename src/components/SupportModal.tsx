@@ -123,8 +123,7 @@ export const SupportModal: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSend = () => {
     if (!inputMessage.trim() && !selectedAttachment) return;
 
     sendUserMessage(
@@ -312,7 +311,7 @@ export const SupportModal: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-col sm:flex-row items-stretch sm:items-center gap-2">
               {/* Hidden file input */}
               <input
                 ref={fileInputRef}
@@ -337,18 +336,18 @@ export const SupportModal: React.FC = () => {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    handleSend(e);
+                    handleSend();
                   }
                 }}
                 placeholder="Type your message to support..."
-                className="flex-1 bg-[#0d1018] border border-[#222a3e] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none placeholder:text-slate-500"
+                className="w-full min-w-0 flex-1 bg-[#0d1018] border border-[#222a3e] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none placeholder:text-slate-500"
               />
 
               <button
                 type="button"
-                onClick={(e) => handleSend(e)}
+                onClick={handleSend}
                 disabled={!inputMessage.trim() && !selectedAttachment}
                 className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-bold p-2.5 rounded-xl transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer shrink-0"
               >

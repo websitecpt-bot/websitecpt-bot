@@ -52,8 +52,17 @@ export const AdminSupportTab: React.FC = () => {
     return timeB - timeA;
   });
 
-  // Selected ticket fallback
+  // Selected ticket fallback with stable anchor
   const selectedTicket = sortedTickets.find((t) => t.id === selectedTicketId) || sortedTickets[0];
+
+  // Auto-anchor selectedTicketId on laptop/desktop so conversation is never detached
+  useEffect(() => {
+    if (sortedTickets.length > 0) {
+      if (!selectedTicketId || !sortedTickets.some((t) => t.id === selectedTicketId)) {
+        setSelectedTicketId(sortedTickets[0].id);
+      }
+    }
+  }, [sortedTickets, selectedTicketId]);
 
   // Auto-scroll to bottom whenever the conversation is opened or new messages arrive
   useEffect(() => {
@@ -105,9 +114,11 @@ export const AdminSupportTab: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleSendReply = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!replyText.trim() && !adminAttachment) || !selectedTicket) return;
+  const handleSendReply = (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e && 'preventDefault' in e) e.preventDefault();
+    const activeTarget = selectedTicket || sortedTickets.find((t) => t.id === selectedTicketId) || sortedTickets[0];
+    if ((!replyText.trim() && !adminAttachment) || !activeTarget) return;
+
     const textToSend = replyText.trim();
     const attachmentToSend = adminAttachment
       ? {
@@ -120,7 +131,7 @@ export const AdminSupportTab: React.FC = () => {
     setReplyText('');
     setAdminAttachment(null);
 
-    sendAdminReply(selectedTicket.id, textToSend, attachmentToSend);
+    sendAdminReply(activeTarget.id, textToSend, attachmentToSend);
   };
 
   const insertTemplate = (text: string) => {
@@ -487,12 +498,19 @@ export const AdminSupportTab: React.FC = () => {
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendReply(e);
+                      }
+                    }}
                     placeholder={`Reply directly to ${selectedTicket.userName}...`}
                     className="flex-1 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none"
                   />
 
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={(e) => handleSendReply(e)}
                     disabled={!replyText.trim() && !adminAttachment}
                     className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
                   >

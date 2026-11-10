@@ -782,21 +782,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Password must be at least 6 characters.' };
     }
 
-    // Referral code verification: if provided, validate; if empty, default to master code (100001)
+    // Referral code verification: strictly mandatory per system policy
+    if (!cleanRef) {
+      return {
+        success: false,
+        message: 'Referral code is mandatory. You cannot create an account without a valid invite code.',
+      };
+    }
+
     let referrer = { uid: '100001', name: 'CPT Markets Global' };
-    if (cleanRef) {
-      const officialMatch = OFFICIAL_REFERRAL_CODES.find((o) => o.code === cleanRef);
-      const userMatch = users.find((u) => u.uid === cleanRef);
-      if (officialMatch) {
-        referrer = { uid: officialMatch.code, name: officialMatch.inviterName };
-      } else if (userMatch) {
-        referrer = { uid: userMatch.uid, name: userMatch.name };
-      } else {
-        return {
-          success: false,
-          message: `Invalid Referral Code "${cleanRef}". Please enter a valid inviter UID or leave blank.`,
-        };
-      }
+    const officialMatch = OFFICIAL_REFERRAL_CODES.find((o) => o.code === cleanRef);
+    const userMatch = users.find((u) => u.uid === cleanRef);
+    if (officialMatch) {
+      referrer = { uid: officialMatch.code, name: officialMatch.inviterName };
+    } else if (userMatch) {
+      referrer = { uid: userMatch.uid, name: userMatch.name };
+    } else {
+      return {
+        success: false,
+        message: `Invalid Referral Code "${cleanRef}". Please provide a valid registered inviter UID or official code (e.g. 100001).`,
+      };
     }
 
     const exists = users.some(
@@ -1499,8 +1504,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let replyTicketToSync: SupportTicket | null = null;
     setSupportTickets((prev) => {
-      const updatedList = prev.map((t) => {
-        if (t.id === ticketId) {
+      // Find matching index
+      let targetIdx = prev.findIndex((t) => t.id === ticketId || t.userId === ticketId);
+      if (targetIdx === -1 && prev.length > 0) {
+        targetIdx = 0; // fallback to top ticket if ID had slight mismatch
+      }
+
+      const updatedList = prev.map((t, idx) => {
+        if (idx === targetIdx) {
           const updated: SupportTicket = {
             ...t,
             status: 'answered',
@@ -1526,7 +1537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncTicketToSupabase(replyTicketToSync).catch((e) => console.warn('Admin reply sync notice:', e));
     }
 
-    const ticket = supportTickets.find((t) => t.id === ticketId);
+    const ticket = supportTickets.find((t) => t.id === ticketId || t.userId === ticketId) || supportTickets[0];
     logAuditAction(
       'SUPPORT_REPLY',
       ticket ? `${ticket.userName} (${ticket.userId})` : 'User Ticket',
@@ -1794,16 +1805,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const wth = withdrawalRequests.find((w) => w.id === withdrawalId);
     if (!wth || wth.status !== 'pending') return;
 
-    const refundedTrading = Number((currentUser.tradingBalance + wth.amount).toFixed(2));
+    const targetUser = users.find((u) => u.id === wth.userId);
+    const prevTrading = targetUser ? targetUser.tradingBalance : 0;
+    const refundedTrading = Number((prevTrading + wth.amount).toFixed(2));
+    const fundingBal = targetUser ? targetUser.fundingBalance : 0;
+
     // Refund back to user's trading balance
     setUsers((prev) =>
       prev.map((u) =>
         u.id === wth.userId
-          ? { ...u, tradingBalance: Number((u.tradingBalance + wth.amount).toFixed(2)) }
+          ? { ...u, tradingBalance: refundedTrading }
           : u
       )
     );
-    updateUserBalanceInSupabase(wth.userId, refundedTrading, currentUser.fundingBalance);
+    updateUserBalanceInSupabase(wth.userId, refundedTrading, fundingBal);
 
     setWithdrawalRequests((prev) =>
       prev.map((w) =>

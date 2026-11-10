@@ -24,7 +24,7 @@ export const AdminBalanceTab: React.FC = () => {
 
   const [selectedUserId, setSelectedUserId] = useState<string>(() => users[0]?.id || '');
   const [amount, setAmount] = useState('');
-  const [adjustmentType, setAdjustmentType] = useState<BalanceAdjustmentType>('bonus');
+  const [adjustmentType, setAdjustmentType] = useState<BalanceAdjustmentType>('deposit');
   const [reason, setReason] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -35,24 +35,26 @@ export const AdminBalanceTab: React.FC = () => {
     e.preventDefault();
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount === 0) {
-      setStatusMessage({ type: 'error', text: 'Please enter a valid non-zero adjustment amount.' });
+      setStatusMessage({ type: 'error', text: 'Please enter a valid non-zero deposit amount.' });
       return;
     }
     if (!reason.trim()) {
-      setStatusMessage({ type: 'error', text: 'A detailed reason is mandatory for audit logging.' });
+      setStatusMessage({ type: 'error', text: 'A detailed reason or note is mandatory for audit logging.' });
       return;
     }
 
+    // Credits directly to user's Funding Balance (not Trading Balance) per user requirement
     adjustUserBalance({
       userId: selectedUser.id,
       amount: parsedAmount,
-      type: adjustmentType,
+      type: 'deposit',
       reason,
+      wallet: 'funding',
     });
 
     setStatusMessage({
       type: 'success',
-      text: `Successfully adjusted ${selectedUser.name}'s balance by ${parsedAmount >= 0 ? '+' : ''}$${parsedAmount.toLocaleString()}. Visible in user balance history.`,
+      text: `Successfully credited ${parsedAmount >= 0 ? '+' : ''}$${parsedAmount.toLocaleString()} directly to ${selectedUser.name}'s Funding Balance.`,
     });
 
     setAmount('');
@@ -162,62 +164,28 @@ export const AdminBalanceTab: React.FC = () => {
         {/* Right: Adjustment Form (7 cols) */}
         <div className="lg:col-span-7">
           <form onSubmit={handleAdjustSubmit} className="space-y-4 text-xs">
-            <h3 className="text-sm font-bold text-white">
-              Execute Balance Adjustment for <span className="text-cyan-400">{selectedUser?.name}</span>
+            <h3 className="text-sm font-bold text-white flex items-center justify-between">
+              <span>Deposit Dollars into <span className="text-emerald-400 font-bold">{selectedUser?.name}</span>'s Account</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                Destination: Funding Balance
+              </span>
             </h3>
 
-            {/* Adjustment Type Selector */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {/* Deposit Option Only (Per screenshot image_355ef468.png) */}
+            <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setAdjustmentType('bonus')}
-                className={`py-2 px-3 rounded-lg border text-center font-semibold transition-all cursor-pointer ${
-                  adjustmentType === 'bonus'
-                    ? 'bg-purple-500/20 border-purple-400 text-purple-300'
-                    : 'bg-[#161c2b] border-[#222a3d] text-slate-400 hover:text-white'
-                }`}
+                className="py-2.5 px-4 rounded-xl border text-center font-bold text-xs bg-emerald-500/20 border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-sm cursor-default"
               >
-                🎁 Promo Bonus
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdjustmentType('deposit')}
-                className={`py-2 px-3 rounded-lg border text-center font-semibold transition-all cursor-pointer ${
-                  adjustmentType === 'deposit'
-                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                    : 'bg-[#161c2b] border-[#222a3d] text-slate-400 hover:text-white'
-                }`}
-              >
-                ➕ Add Deposit
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdjustmentType('refund')}
-                className={`py-2 px-3 rounded-lg border text-center font-semibold transition-all cursor-pointer ${
-                  adjustmentType === 'refund'
-                    ? 'bg-blue-500/20 border-blue-400 text-blue-300'
-                    : 'bg-[#161c2b] border-[#222a3d] text-slate-400 hover:text-white'
-                }`}
-              >
-                🔄 Refund / Credit
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdjustmentType('correction')}
-                className={`py-2 px-3 rounded-lg border text-center font-semibold transition-all cursor-pointer ${
-                  adjustmentType === 'correction'
-                    ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                    : 'bg-[#161c2b] border-[#222a3d] text-slate-400 hover:text-white'
-                }`}
-              >
-                ⚙️ Correction
+                <PlusCircle className="w-4 h-4 text-emerald-400" />
+                <span>Add Deposit (Direct to Funding Balance)</span>
               </button>
             </div>
 
             {/* Amount */}
             <div>
               <label className="text-slate-300 font-medium block mb-1">
-                Adjustment Amount ($) — e.g. <span className="text-emerald-400">+5000</span> or <span className="text-rose-400">-500</span>
+                Deposit Amount ($) — e.g. <span className="text-emerald-400 font-mono">+1000</span> or <span className="text-emerald-400 font-mono">+50000</span>
               </label>
               <input
                 type="number"
@@ -225,9 +193,12 @@ export const AdminBalanceTab: React.FC = () => {
                 required
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="Enter amount (positive or negative)"
-                className="w-full bg-[#161c2b] border border-[#242e44] focus:border-cyan-400 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none"
+                placeholder="Enter deposit amount in USD"
+                className="w-full bg-[#161c2b] border border-[#242e44] focus:border-emerald-400 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none"
               />
+              <span className="text-[11px] text-emerald-400/80 block mt-1 font-mono">
+                ✓ Funds will be added directly to the user's Funding Balance.
+              </span>
             </div>
 
             {/* Reason */}
@@ -252,9 +223,10 @@ export const AdminBalanceTab: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 text-black font-extrabold py-3 rounded-xl text-xs transition-all shadow-md shadow-cyan-500/25 cursor-pointer"
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-extrabold py-3 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-2"
             >
-              Confirm & Post Balance Adjustment
+              <PlusCircle className="w-4 h-4" />
+              <span>Confirm & Deposit to Funding Balance</span>
             </button>
           </form>
         </div>

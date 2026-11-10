@@ -141,26 +141,76 @@ export const AdminSettingsTab: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center justify-between p-3.5 bg-[#161c2a] border border-[#222a3d] rounded-xl">
-          <div>
-            <span className="font-bold text-white block">Maintenance Mode</span>
-            <span className="text-[11px] text-slate-400">
-              Temporarily halts new order tickets for infrastructure maintenance.
-            </span>
+        {/* Maintenance / Upgrade Mode Live Toggle Card */}
+        <div className={`p-4 rounded-xl border transition-all ${
+          maintenanceMode
+            ? 'bg-amber-500/10 border-amber-500/40 shadow-[0_0_25px_rgba(245,166,35,0.15)]'
+            : 'bg-[#161c2a] border-[#222a3d]'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-sm">System Upgrade / Maintenance Mode</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
+                    maintenanceMode
+                      ? 'bg-amber-400 text-black animate-pulse'
+                      : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  }`}
+                >
+                  {maintenanceMode ? '🟡 Active (Under Maintenance)' : '🟢 Platform Live'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed max-w-xl">
+                {maintenanceMode
+                  ? 'All public and trader traffic is currently redirected to the System Upgrade screen. As an Administrator, your management portal remains active.'
+                  : 'Platform is operating normally. Turn ON when performing database updates, server upgrades, or coin recalibrations.'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = !maintenanceMode;
+                  setMaintenanceMode(nextVal);
+                  updateSystemSettings({ maintenanceMode: nextVal });
+                  setSavedFeedback(
+                    nextVal
+                      ? '⚠️ System Upgrade / Maintenance Mode is now ACTIVE. Public visitors are blocked by the Upgrade screen.'
+                      : '✅ Platform is now LIVE. Trading and normal client access restored.'
+                  );
+                  setTimeout(() => setSavedFeedback(null), 4000);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${
+                  maintenanceMode
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
+                    : 'bg-amber-400 hover:bg-amber-300 text-black font-extrabold shadow-amber-500/20'
+                }`}
+              >
+                <span>{maintenanceMode ? 'Turn OFF Maintenance' : 'Turn ON Maintenance'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = !maintenanceMode;
+                  setMaintenanceMode(nextVal);
+                  updateSystemSettings({ maintenanceMode: nextVal });
+                }}
+                className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                  maintenanceMode ? 'bg-amber-400' : 'bg-slate-700'
+                }`}
+                title="Toggle Maintenance Mode"
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-black absolute top-1 transition-all ${
+                    maintenanceMode ? 'left-7' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setMaintenanceMode(!maintenanceMode)}
-            className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-              maintenanceMode ? 'bg-cyan-400' : 'bg-slate-700'
-            }`}
-          >
-            <div
-              className={`w-4 h-4 rounded-full bg-black absolute top-1 transition-all ${
-                maintenanceMode ? 'left-7' : 'left-1'
-              }`}
-            />
-          </button>
         </div>
 
         <div className="pt-2 flex justify-end">

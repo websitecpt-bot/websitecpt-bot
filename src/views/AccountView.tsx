@@ -985,6 +985,68 @@ export const AccountView: React.FC = () => {
               <div className="bg-[#0b0f1a] border border-[#192236] rounded-xl p-4 text-xs text-slate-400 leading-relaxed text-left">
                 Withdrawal requests are processed manually. After submitting your request, contact Customer Support if additional verification is required.
               </div>
+
+              {/* Real-time Withdrawal Records & Rejection Reason Feed */}
+              {userWithdrawals.length > 0 && (
+                <div className="bg-[#0e1322] border border-[#1d273d] rounded-2xl p-5 space-y-3 text-left">
+                  <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-amber-400" />
+                      <span>Your Withdrawal Records ({userWithdrawals.length})</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Live Status & Admin Notes</span>
+                  </div>
+
+                  <div className="divide-y divide-[#171e2e]">
+                    {userWithdrawals.map((w) => (
+                      <div key={w.id} className="py-3 text-xs">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-white text-sm">
+                                ${w.amount.toFixed(2)}
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase font-bold">
+                                {w.withdrawalType || 'USD'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate max-w-xs">
+                              {w.bankOrAddress}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                              {w.timestamp} · {w.network}
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                w.status === 'approved'
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                  : w.status === 'rejected'
+                                  ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                              }`}
+                            >
+                              {w.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {w.status === 'rejected' && (w.rejectReason || w.notes) && (
+                          <div className="mt-2.5 bg-rose-500/15 border border-rose-500/40 rounded-xl p-3 text-xs text-rose-200 flex items-start gap-2.5">
+                            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold text-rose-400 block text-xs">Admin Rejection Reason:</span>
+                              <p className="text-[12px] text-rose-100 font-medium mt-0.5 leading-relaxed">{w.rejectReason || w.notes}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

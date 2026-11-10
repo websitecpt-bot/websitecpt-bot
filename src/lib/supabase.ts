@@ -400,7 +400,23 @@ export const syncTicketToSupabase = async (ticket: SupportTicket): Promise<{ suc
       if (fb.error) return { success: false, error: fb.error.message };
       return { success: true };
     }
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      console.warn('[Supabase syncTicketToSupabase notice]:', error.message);
+      // Fallback with base columns if schema has column differences
+      const minimal = {
+        id: ticket.id,
+        user_id: ticket.userId,
+        user_name: ticket.userName,
+        status: ticket.status,
+        last_message: ticket.lastMessage,
+        messages: ticket.messages,
+      };
+      const retry = await supabase.from('support_tickets').upsert(minimal, { onConflict: 'id' });
+      if (retry.error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    }
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message };

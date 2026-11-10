@@ -10,6 +10,7 @@ import { AccountView } from './views/AccountView';
 import { AdminPanel } from './views/AdminPanel';
 import { UserLoginView } from './views/UserLoginView';
 import { ClientTradingAgreementView } from './views/ClientTradingAgreementView';
+import { SystemMaintenanceView } from './views/SystemMaintenanceView';
 import { SupportModal } from './components/SupportModal';
 import { DepositModal } from './components/DepositModal';
 import { TransferModal } from './components/TransferModal';
@@ -52,7 +53,15 @@ const CookieConsentBanner: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { activeTab, setActiveTab, isUserLoggedIn, setIsSupportOpen, language } = useApp();
+  const {
+    activeTab,
+    setActiveTab,
+    isUserLoggedIn,
+    setIsSupportOpen,
+    language,
+    systemSettings,
+    isAdmin,
+  } = useApp();
   const t = TRANSLATIONS[language] || TRANSLATIONS.en;
 
   // Listen to browser navigation popstate
@@ -73,7 +82,8 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleLocation);
   }, [isUserLoggedIn, setActiveTab]);
 
-  const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin' && activeTab !== 'agreement';
+  const isMaintenanceActive = Boolean(systemSettings.maintenanceMode && !isAdmin);
+  const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin' && activeTab !== 'agreement' && !isMaintenanceActive;
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 flex flex-col font-sans">
@@ -85,6 +95,8 @@ const AppContent: React.FC = () => {
         {/* If user navigates to Admin tab, always show Admin Panel */}
         {activeTab === 'admin' ? (
           <AdminPanel />
+        ) : isMaintenanceActive ? (
+          <SystemMaintenanceView />
         ) : !isUserLoggedIn || activeTab === 'login' ? (
           <UserLoginView />
         ) : activeTab === 'agreement' ? (
@@ -109,7 +121,7 @@ const AppContent: React.FC = () => {
       <CookieConsentBanner />
 
       {/* Mobile Bottom Navigation Bar (Matching screenshot: Home, Market, Trade, History, Account) */}
-      {isUserLoggedIn && activeTab !== 'admin' && activeTab !== 'login' && activeTab !== 'agreement' && (
+      {isUserLoggedIn && activeTab !== 'admin' && activeTab !== 'login' && activeTab !== 'agreement' && !isMaintenanceActive && (
         <nav
           aria-label="Mobile Navigation"
           className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0c1017]/95 backdrop-blur-lg border-t border-[#1a2234] py-2 px-3 flex items-center justify-around select-none shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
@@ -177,7 +189,7 @@ const AppContent: React.FC = () => {
       )}
 
       {/* Bottom Footer (Clean footer with NO admin button) */}
-      {activeTab !== 'admin' && activeTab !== 'login' && isUserLoggedIn && (
+      {activeTab !== 'admin' && activeTab !== 'login' && isUserLoggedIn && !isMaintenanceActive && (
         <footer className="bg-[#080b10] border-t border-[#181d2a] py-6 px-4 sm:px-6 text-xs text-slate-400">
           <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">

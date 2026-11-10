@@ -107,15 +107,24 @@ export const UserLoginView: React.FC = () => {
       return;
     }
 
-    // Invite code validation: if provided, verify it exists. If empty, default to master code 100001
-    const codeToUse = trimmedRef || '100001';
-    if (trimmedRef && !matchedInviter) {
+    // Invite code validation: strictly mandatory (account creation blocked without valid code)
+    if (!trimmedRef) {
       setFeedback({
         type: 'error',
-        message: 'Invalid invite code. Please enter a valid inviter UID or leave blank for default.',
+        message: 'Referral / Invite Code is strictly mandatory. You cannot create an account without an invite code.',
       });
       return;
     }
+
+    if (!matchedInviter) {
+      setFeedback({
+        type: 'error',
+        message: 'Invalid invite code. Please enter a valid registered inviter UID or official code (e.g. 100001).',
+      });
+      return;
+    }
+
+    const codeToUse = trimmedRef;
 
     setIsSubmitting(true);
 
@@ -433,18 +442,24 @@ export const UserLoginView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 5. Invite Code */}
+                {/* 5. Invite Code (Mandatory) */}
                 <div className="space-y-1.5">
-                  <label className="text-slate-300 font-medium block text-xs">
-                    Invite Code
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-slate-300 font-medium block text-xs">
+                      Referral / Invite Code <span className="text-amber-400 font-bold">*</span>
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-bold tracking-wider uppercase bg-amber-400/10 px-1.5 py-0.2 rounded border border-amber-400/30">
+                      Mandatory
+                    </span>
+                  </div>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
+                      required
                       value={regInviteCode}
                       onChange={(e) => setRegInviteCode(e.target.value)}
-                      placeholder="Invite code (optional)"
+                      placeholder="Enter mandatory invite code (e.g. 100001)"
                       className={`w-full bg-[#111c34] border rounded-xl pl-10 pr-4 py-3 outline-none transition-all placeholder:text-slate-500 text-xs shadow-inner font-mono ${
                         matchedInviter
                           ? 'border-emerald-500/80 text-emerald-300 focus:border-emerald-400'

@@ -336,12 +336,19 @@ export const SupportModal: React.FC = () => {
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e);
+                  }
+                }}
                 placeholder="Type your message to support..."
                 className="flex-1 bg-[#0d1018] border border-[#222a3e] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none placeholder:text-slate-500"
               />
 
               <button
-                type="submit"
+                type="button"
+                onClick={(e) => handleSend(e)}
                 disabled={!inputMessage.trim() && !selectedAttachment}
                 className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-bold p-2.5 rounded-xl transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer shrink-0"
               >

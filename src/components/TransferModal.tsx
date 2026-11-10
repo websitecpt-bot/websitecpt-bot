@@ -38,7 +38,7 @@ export const TransferModal: React.FC = () => {
     setNotification(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(amountInput);
 
@@ -56,8 +56,14 @@ export const TransferModal: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    const res = transferFunds({ fromWallet, toWallet, amount });
-    setIsSubmitting(false);
+    let res: { success: boolean; message: string };
+    try {
+      res = await transferFunds({ fromWallet, toWallet, amount });
+    } catch (error: any) {
+      res = { success: false, message: error?.message || 'Unable to save this transfer.' };
+    } finally {
+      setIsSubmitting(false);
+    }
 
     if (res.success) {
       setNotification({ type: 'success', message: res.message });

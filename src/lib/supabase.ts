@@ -234,14 +234,15 @@ export const fetchWithdrawalsFromSupabase = async (): Promise<WithdrawalRequest[
       userId: row.user_id,
       userName: row.user_name,
       amount: Number(row.amount || 0),
-      accountHolderName: row.user_name,
+      accountHolderName: row.account_holder_name || row.user_name,
       bankOrAddress: row.bank_or_address || '',
       network: row.network || 'USDT',
       status: (row.status || 'pending') as 'pending' | 'approved' | 'rejected',
       timestamp: row.created_at,
       withdrawalType: (row.withdrawal_type || 'USD') as 'USD' | 'USDT',
       notes: row.notes || '',
-      rejectReason: row.reject_reason || row.notes || '',
+      rejectReason: row.reject_reason || (row.status === 'rejected' ? row.notes : '') || '',
+      sourceWallet: row.source_wallet === 'trading' ? 'trading' : 'funding',
     }));
   } catch (err) {
     console.warn('[Supabase fetchWithdrawals] exception:', err);
@@ -316,30 +317,61 @@ export const syncUserToSupabase = async (user: User): Promise<{ success: boolean
   }
 };
 
-export const updateUserBalanceInSupabase = async (userId: string, trading: number, funding: number) => {
-  if (!supabase) return;
+export const updateUserBalanceInSupabase = async (
+  userId: string,
+  trading: number,
+  funding: number
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase client is not configured' };
+
+  const payload = {
+    trading_balance: Number(trading.toFixed(2)),
+    funding_balance: Number(funding.toFixed(2)),
+  };
+
   try {
-    const payload: Record<string, any> = {
-      trading_balance: trading,
-      funding_balance: funding,
-    };
+    let result = await supabase
+      .from('users')
+      .update(payload)
+      .eq('id', userId)
+      .select('id')
+      .maybeSingle();
 
-    let res = await supabase.from('users').update(payload).eq('id', userId);
-
-    // Also update by uid in case client passed uid or table uses uid
-    await supabase.from('users').update(payload).eq('uid', userId);
-
-    if (res.error && res.error.message?.includes('trading_balance')) {
-      const alt = { balance: trading, funding_balance: funding };
-      await supabase.from('users').update(alt).eq('id', userId);
-      await supabase.from('users').update(alt).eq('uid', userId);
+    if (result.error && (result.error.code === '42P01' || result.error.message?.includes('does not exist'))) {
+      result = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', userId)
+        .select('id')
+        .maybeSingle();
     }
 
-    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
-      await supabase.from('profiles').update(payload).eq('id', userId);
+    if (!result.error && result.data) return { success: true };
+
+    if (!result.error && !result.data) {
+      const byUid = await supabase
+        .from('users')
+        .update(payload)
+        .eq('uid', userId)
+        .select('id')
+        .maybeSingle();
+      if (byUid.error) return { success: false, error: byUid.error.message };
+      if (byUid.data) return { success: true };
+      return { success: false, error: `No Supabase user row found for id/uid "${userId}".` };
     }
-  } catch (err) {
-    console.warn('Supabase updateUserBalance notice:', err);
+
+    // Compatibility with older schemas whose trading balance column was named "balance".
+    if (result.error && (result.error.message?.includes('trading_balance') || result.error.code === '42703')) {
+      const legacyPayload = { balance: payload.trading_balance, funding_balance: payload.funding_balance };
+      const legacy = await supabase.from('users').update(legacyPayload).eq('id', userId).select('id').maybeSingle();
+      if (legacy.error) return { success: false, error: legacy.error.message };
+      if (legacy.data) return { success: true };
+    }
+
+    return { success: false, error: result.error?.message || 'Supabase did not update the user balance.' };
+  } catch (err: any) {
+    console.warn('Supabase updateUserBalance error:', err);
+    return { success: false, error: err?.message || 'Network exception while updating wallet balances' };
   }
 };
 
@@ -472,31 +504,53 @@ export const updateDepositStatusInSupabase = async (depositId: string, status: s
 };
 
 export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest): Promise<{ success: boolean; error?: string }> => {
-  if (!supabase) return { success: false, error: 'Not configured' };
+  if (!supabase) return { success: false, error: 'Supabase client is not configured' };
+
   try {
     const payload = {
       id: withdrawal.id,
       user_id: withdrawal.userId,
       user_name: withdrawal.userName,
       account_holder_name: withdrawal.accountHolderName || withdrawal.userName,
-      amount: withdrawal.amount,
-      withdrawal_type: withdrawal.withdrawalType,
+      amount: Number(withdrawal.amount.toFixed(2)),
+      withdrawal_type: withdrawal.withdrawalType || 'USD',
       bank_or_address: withdrawal.bankOrAddress,
       network: withdrawal.network,
+      source_wallet: withdrawal.sourceWallet || 'funding',
       status: withdrawal.status,
+      reject_reason: withdrawal.rejectReason || '',
       notes: withdrawal.notes || '',
       created_at: withdrawal.timestamp,
     };
-    let { error } = await supabase.from('withdrawal_requests').upsert(payload, { onConflict: 'id' });
-    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
-      const fb = await supabase.from('withdrawals').upsert(payload, { onConflict: 'id' });
-      if (fb.error) return { success: false, error: fb.error.message };
-      return { success: true };
+
+    const { error } = await supabase
+      .from('withdrawal_requests')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (error) {
+      console.error('[Supabase syncWithdrawalToSupabase] error:', error);
+      return { success: false, error: error.message };
     }
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[Supabase syncWithdrawalToSupabase] exception:', err);
+    return { success: false, error: err?.message || 'Network exception saving withdrawal request' };
+  }
+};
+
+export const deleteWithdrawalFromSupabase = async (
+  withdrawalId: string
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase client is not configured' };
+  try {
+    const { error } = await supabase
+      .from('withdrawal_requests')
+      .delete()
+      .eq('id', withdrawalId);
     if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message };
+    return { success: false, error: err?.message || 'Network exception deleting withdrawal request' };
   }
 };
 
@@ -504,20 +558,39 @@ export const updateWithdrawalStatusInSupabase = async (
   withdrawalId: string,
   status: string,
   rejectReason?: string
-) => {
-  if (!supabase) return;
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase client is not configured' };
+
   try {
     const updatePayload: Record<string, any> = { status };
-    if (rejectReason) {
+    if (typeof rejectReason === 'string') {
       updatePayload.notes = rejectReason;
       updatePayload.reject_reason = rejectReason;
     }
-    let { error } = await supabase.from('withdrawal_requests').update(updatePayload).eq('id', withdrawalId);
-    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
-      await supabase.from('withdrawals').update(updatePayload).eq('id', withdrawalId);
+
+    let result = await supabase
+      .from('withdrawal_requests')
+      .update(updatePayload)
+      .eq('id', withdrawalId)
+      .select('id')
+      .maybeSingle();
+
+    if (result.error && result.error.code === '42703' && typeof rejectReason === 'string') {
+      // Older installations may not yet have reject_reason; retain the message in notes.
+      result = await supabase
+        .from('withdrawal_requests')
+        .update({ status, notes: rejectReason })
+        .eq('id', withdrawalId)
+        .select('id')
+        .maybeSingle();
     }
-  } catch (err) {
-    console.warn('Supabase updateWithdrawalStatus notice:', err);
+
+    if (result.error) return { success: false, error: result.error.message };
+    if (!result.data) return { success: false, error: 'Withdrawal record was not found in Supabase.' };
+    return { success: true };
+  } catch (err: any) {
+    console.warn('Supabase updateWithdrawalStatus error:', err);
+    return { success: false, error: err?.message || 'Network exception updating withdrawal status' };
   }
 };
 

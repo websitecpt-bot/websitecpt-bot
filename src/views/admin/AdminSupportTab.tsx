@@ -180,10 +180,10 @@ export const AdminSupportTab: React.FC = () => {
       </div>
 
       {/* Main Dual-Pane Chat Layout (Responsive for Mobile & Desktop) */}
-      <div className="bg-[#10141f] border border-[#20283c] rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[660px]">
+      <div className="bg-[#10141f] border border-[#20283c] rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 grid-rows-1 md:grid-cols-12 h-[660px] min-h-0">
         {/* Left Inbox List (5 cols on desktop, full width on mobile when not inside a chat) */}
         <div
-          className={`md:col-span-5 border-r border-[#1e2538] flex flex-col bg-[#121623] h-full ${
+          className={`md:col-span-5 border-r border-[#1e2538] flex flex-col bg-[#121623] h-full min-h-0 ${
             mobileView === 'chat' ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -272,7 +272,7 @@ export const AdminSupportTab: React.FC = () => {
 
         {/* Right Active Conversation Pane (7 cols on desktop, full width on mobile when viewing chat) */}
         <div
-          className={`md:col-span-7 flex flex-col bg-[#0e121c] h-full overflow-hidden ${
+          className={`md:col-span-7 flex flex-col bg-[#0e121c] h-full min-h-0 overflow-hidden ${
             mobileView === 'list' ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -447,7 +447,7 @@ export const AdminSupportTab: React.FC = () => {
               {/* Reply Input Bar with Auto-Focus and Multi-device support */}
               <form
                 onSubmit={handleSendReply}
-                className="bg-[#141926] border-t border-[#1f273a] p-3 flex flex-col gap-2 shrink-0"
+                className="relative z-10 bg-[#141926] border-t border-[#1f273a] p-3 flex flex-col gap-2 shrink-0"
               >
                 {adminAttachment && (
                   <div className="flex items-center gap-2.5 bg-[#0b0e15] p-2 rounded-xl border border-[#232c40] w-fit max-w-full">
@@ -509,7 +509,8 @@ export const AdminSupportTab: React.FC = () => {
                   />
 
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={() => handleSendReply()}
                     disabled={!replyText.trim() && !adminAttachment}
                     className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
                   >

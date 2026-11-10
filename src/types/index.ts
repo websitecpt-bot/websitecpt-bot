@@ -42,6 +42,16 @@ export interface Trade {
   pnl: number;
   pnlPercent: number;
   fee: number;
+  /** True only for non-cash QA/paper trades opened by the Super Administrator account. */
+  isPaperTrade?: boolean;
+  /** QA-only price behavior. Never applied to customer/live trades. */
+  qaOverrideMode?: 'locked' | 'target_profit';
+  qaLockedExitPrice?: number;
+  qaTargetProfit?: number;
+  qaTargetExitPrice?: number;
+  qaStartPnl?: number;
+  qaOverrideStartedAt?: string;
+  qaLastPriceUpdateAt?: string;
 }
 
 export interface SupportMessage {

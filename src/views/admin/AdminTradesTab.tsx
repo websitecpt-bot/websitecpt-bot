@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { calculateReferenceExitPrice } from '../../utils/tradeReconciliation';
 import { Trade, TradeStatus } from '../../types';
 import {
   TrendingUp,
@@ -19,29 +18,6 @@ export const AdminTradesTab: React.FC = () => {
 
   const [statusFilter, setStatusFilter] = useState<'all' | TradeStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [reconciliationTradeId, setReconciliationTradeId] = useState('');
-  const [targetProfitInput, setTargetProfitInput] = useState('');
-
-  const reconciliationTrade =
-    trades.find((trade) => trade.id === reconciliationTradeId) ||
-    trades.find((trade) => trade.status === 'OPEN') ||
-    trades[0];
-
-  const reconciliationPreview = (() => {
-    if (!reconciliationTrade || !targetProfitInput.trim()) return null;
-    try {
-      return calculateReferenceExitPrice({
-        tradeType: reconciliationTrade.type,
-        entryPrice: reconciliationTrade.entryPrice,
-        margin: reconciliationTrade.margin,
-        leverage: reconciliationTrade.leverage,
-        targetProfit: Number(targetProfitInput),
-      });
-    } catch {
-      return null;
-    }
-  })();
-
   // Fast Market Stress-Testing / Benchmark State
   const [testSymbol, setTestSymbol] = useState('ETH');
   const activeTestCoin = coins.find((c) => c.symbol === testSymbol) || coins[0];
@@ -215,120 +191,6 @@ export const AdminTradesTab: React.FC = () => {
         </div>
       </div>
 
-
-      {/* Read-only trade dispute reference calculator. No execution or balance fields are changed. */}
-      <div className="bg-[#111a24] border border-cyan-500/30 rounded-2xl p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-bold text-cyan-300">Trade Reconciliation Calculator</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Hypothetical reference only · Actual execution price and trade PnL are never modified here.
-            </p>
-          </div>
-          <span className="text-[10px] uppercase font-bold tracking-wide bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 rounded-full px-2.5 py-1 w-fit">
-            Read-only
-          </span>
-        </div>
-
-        {trades.length === 0 ? (
-          <p className="text-xs text-slate-400">No trade records are available for reconciliation.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-slate-300">Select Trade</label>
-              <select
-                value={reconciliationTrade?.id || ''}
-                onChange={(e) => setReconciliationTradeId(e.target.value)}
-                className="w-full bg-[#0b111a] border border-[#2a3a4c] rounded-lg px-3 py-2.5 text-xs text-white"
-              >
-                {trades.map((trade) => (
-                  <option key={trade.id} value={trade.id}>
-                    {trade.userName} · {trade.symbol} · {trade.type} · {trade.status} · {trade.id}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-slate-300">Hypothetical Target PnL (USD)</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={targetProfitInput}
-                onChange={(e) => setTargetProfitInput(e.target.value)}
-                placeholder="Example: 400000"
-                className="w-full bg-[#0b111a] border border-[#2a3a4c] rounded-lg px-3 py-2.5 text-xs text-white font-mono"
-              />
-            </div>
-
-            {reconciliationTrade && (
-              <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="bg-[#0b111a] rounded-lg p-3">
-                  <div className="text-[10px] text-slate-400">Entry Price</div>
-                  <div className="text-xs text-white font-mono mt-1">
-                    ${reconciliationTrade.entryPrice.toLocaleString()}
-                  </div>
-                </div>
-                <div className="bg-[#0b111a] rounded-lg p-3">
-                  <div className="text-[10px] text-slate-400">Margin</div>
-                  <div className="text-xs text-white font-mono mt-1">
-                    ${reconciliationTrade.margin.toLocaleString()}
-                  </div>
-                </div>
-                <div className="bg-[#0b111a] rounded-lg p-3">
-                  <div className="text-[10px] text-slate-400">Leverage</div>
-                  <div className="text-xs text-white font-mono mt-1">
-                    {reconciliationTrade.leverage}x
-                  </div>
-                </div>
-                <div className="bg-[#0b111a] rounded-lg p-3">
-                  <div className="text-[10px] text-slate-400">Position Size</div>
-                  <div className="text-xs text-white font-mono mt-1">
-                    ${(reconciliationTrade.margin * reconciliationTrade.leverage).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {reconciliationPreview ? (
-              <div className="md:col-span-2 bg-[#0b111a] border border-cyan-500/20 rounded-xl p-3 sm:p-4 space-y-2">
-                <div className="text-[10px] text-cyan-300 uppercase font-bold tracking-wider">
-                  Calculated Reference — Not an Executable Quote
-                </div>
-                <div className="text-xl sm:text-2xl font-bold text-cyan-300 font-mono break-all">
-                  ${reconciliationPreview.referenceExitPrice.toLocaleString(undefined, { maximumFractionDigits: 12 })}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="text-slate-400">
-                    Reconstructed PnL:
-                    <span className="block text-emerald-400 font-mono font-bold mt-0.5">
-                      ${reconciliationPreview.reconstructedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-slate-400">
-                    Return on Margin:
-                    <span className="block text-white font-mono font-bold mt-0.5">
-                      {reconciliationPreview.roe.toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-                <p className="text-[10px] text-amber-300/90">
-                  Hypothetical reference only. It does not lock the live market feed, update Supabase execution fields, change user PnL, or credit any wallet.
-                </p>
-              </div>
-            ) : (
-              <p className="md:col-span-2 text-[11px] text-slate-500">
-                Enter a positive target amount. A short trade requiring a zero or negative reference price is rejected.
-              </p>
-            )}
-
-            <div className="md:col-span-2 text-[11px] text-slate-400">
-              For approved customer compensation, use the existing Admin Balance Management workflow with the dispute case reference and reason. Keep compensation separate from the original trade execution record.
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Trades Table */}
       <div className="bg-[#121622] border border-[#21293c] rounded-2xl overflow-hidden shadow-xl">

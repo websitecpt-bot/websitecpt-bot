@@ -45,6 +45,7 @@ import {
   syncDepositToSupabase,
   updateDepositStatusInSupabase,
   syncWithdrawalToSupabase,
+  deleteWithdrawalFromSupabase,
   updateWithdrawalStatusInSupabase,
   syncAuditLogToSupabase,
   subscribeToSupabaseRealtime,
@@ -98,7 +99,7 @@ interface AppContextType {
     fromWallet: 'funding' | 'trading';
     toWallet: 'funding' | 'trading';
     amount: number;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string }>;
   selectedTradeDetails: Trade | null;
   setSelectedTradeDetails: (trade: Trade | null) => void;
 
@@ -178,9 +179,9 @@ interface AppContextType {
     withdrawalType?: 'USD' | 'USDT';
     wallet?: 'funding' | 'trading';
     notes?: string;
-  }) => { success: boolean; message: string };
-  approveWithdrawal: (withdrawalId: string) => void;
-  rejectWithdrawal: (withdrawalId: string, reason: string) => void;
+  }) => Promise<{ success: boolean; message: string }>;
+  approveWithdrawal: (withdrawalId: string) => Promise<void>;
+  rejectWithdrawal: (withdrawalId: string, reason: string) => Promise<boolean>;
 
   // Admin & System
   isAdmin: boolean;
@@ -1291,15 +1292,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
   ) => {
-    if (!text.trim() && !attachment) return;
+    const cleanText = text.trim();
+    if (!cleanText && !attachment) return;
+
     const nowStr = new Date().toISOString();
-    const displaySummary = text.trim() || (attachment ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}` : '');
+    const displaySummary = cleanText || (attachment
+      ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}`
+      : '');
 
     const newMsg: SupportMessage = {
       id: `msg-${Date.now()}`,
       sender: 'user',
       senderName: currentUser.name,
-      text: text.trim(),
+      text: cleanText,
       timestamp: nowStr,
       read: false,
       attachmentUrl: attachment?.url,
@@ -1307,19 +1312,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachmentType: attachment?.type,
     };
 
-    let isFirstUserMessage = false;
-    let ticketToSync: SupportTicket | null = null;
+    const activeTicket = supportTickets
+      .filter((ticket) => ticket.userId === currentUser.id)
+      .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime())[0];
 
-    setSupportTickets((prev) => {
-      const userTickets = prev.filter((t) => t.userId === currentUser.id);
-      const activeTicket = userTickets[0]; // most recent ticket
+    const isFirstUserMessage = !activeTicket || activeTicket.isSessionClosed ||
+      !activeTicket.messages.some((message) => message.sender === 'user');
 
-      if (activeTicket && !activeTicket.isSessionClosed) {
-        const hadPriorUserMessage = activeTicket.messages.some((m) => m.sender === 'user');
-        if (!hadPriorUserMessage) {
-          isFirstUserMessage = true;
-        }
-        const updatedTicket: SupportTicket = {
+    const updatedTicket: SupportTicket = activeTicket && !activeTicket.isSessionClosed
+      ? {
           ...activeTicket,
           status: 'pending',
           isSessionClosed: false,
@@ -1327,15 +1328,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lastMessageTime: nowStr,
           unreadAdminCount: (activeTicket.unreadAdminCount || 0) + 1,
           messages: [...activeTicket.messages, newMsg],
-        };
-        ticketToSync = updatedTicket;
-        const updatedList = prev.map((t) => (t.id === activeTicket.id ? updatedTicket : t));
-        return updatedList.sort(
-          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-        );
-      } else {
-        isFirstUserMessage = true;
-        const newTicket: SupportTicket = {
+        }
+      : {
           id: `ticket-${Date.now()}`,
           userId: currentUser.id,
           userName: currentUser.name,
@@ -1348,19 +1342,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           unreadUserCount: 0,
           messages: [newMsg],
         };
-        ticketToSync = newTicket;
-        const updatedList = [newTicket, ...prev];
-        return updatedList.sort(
-          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-        );
-      }
-    });
 
-    if (ticketToSync && isSupabaseConfigured()) {
-      syncTicketToSupabase(ticketToSync).catch((e) => console.warn('User ticket sync notice:', e));
+    const nextTickets = activeTicket && !activeTicket.isSessionClosed
+      ? supportTickets.map((ticket) => ticket.id === activeTicket.id ? updatedTicket : ticket)
+      : [updatedTicket, ...supportTickets];
+
+    setSupportTickets(
+      nextTickets.sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime())
+    );
+
+    if (isSupabaseConfigured()) {
+      syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.warn('User support message was not saved to Supabase:', result.error);
+      }).catch((error) => console.warn('User support message sync failed:', error));
     }
 
-    // Send single automated initial acknowledgment only on customer's first message
+    // Send one automated acknowledgment for the first message in a support session.
     if (isFirstUserMessage) {
       setTimeout(() => {
         const replyNowStr = new Date().toISOString();
@@ -1374,20 +1371,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         setSupportTickets((prev) => {
-          const userTickets = prev.filter((t) => t.userId === currentUser.id);
-          const activeTicket = userTickets[0];
-          if (!activeTicket) return prev;
-          const withBotReply = {
-            ...activeTicket,
+          const currentTicket = prev
+            .filter((ticket) => ticket.userId === currentUser.id)
+            .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime())[0];
+          if (!currentTicket || currentTicket.isSessionClosed) return prev;
+
+          const withBotReply: SupportTicket = {
+            ...currentTicket,
             lastMessage: botReply.text,
             lastMessageTime: replyNowStr,
-            unreadUserCount: activeTicket.unreadUserCount + 1,
-            messages: [...activeTicket.messages, botReply],
+            unreadUserCount: (currentTicket.unreadUserCount || 0) + 1,
+            messages: [...currentTicket.messages, botReply],
           };
+
           if (isSupabaseConfigured()) {
-            syncTicketToSupabase(withBotReply).catch((e) => console.warn('Bot ack sync notice:', e));
+            syncTicketToSupabase(withBotReply).then((result) => {
+              if (!result.success) console.warn('Support acknowledgment sync failed:', result.error);
+            }).catch((error) => console.warn('Support acknowledgment sync failed:', error));
           }
-          return prev.map((t) => (t.id === activeTicket.id ? withBotReply : t));
+          return prev.map((ticket) => ticket.id === currentTicket.id ? withBotReply : ticket);
         });
       }, 1200);
     }
@@ -1487,15 +1489,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
   ) => {
-    if (!text.trim() && !attachment) return;
+    const cleanText = text.trim();
+    if (!cleanText && !attachment) return;
+
+    const targetTicket = supportTickets.find((ticket) =>
+      ticket.id === ticketId || ticket.userId === ticketId
+    );
+    if (!targetTicket) {
+      console.warn('Admin reply skipped: support ticket not found.', ticketId);
+      return;
+    }
+
     const nowStr = new Date().toISOString();
-    const displaySummary = text.trim() || (attachment ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}` : '');
+    const displaySummary = cleanText || (attachment
+      ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}`
+      : '');
 
     const newMsg: SupportMessage = {
       id: `msg-${Date.now()}`,
       sender: 'admin',
       senderName: adminName,
-      text: text.trim(),
+      text: cleanText,
       timestamp: nowStr,
       read: false,
       attachmentUrl: attachment?.url,
@@ -1503,46 +1517,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachmentType: attachment?.type,
     };
 
-    let replyTicketToSync: SupportTicket | null = null;
-    setSupportTickets((prev) => {
-      // Find matching index
-      let targetIdx = prev.findIndex((t) => t.id === ticketId || t.userId === ticketId);
-      if (targetIdx === -1 && prev.length > 0) {
-        targetIdx = 0; // fallback to top ticket if ID had slight mismatch
-      }
+    const updatedTicket: SupportTicket = {
+      ...targetTicket,
+      status: 'answered',
+      isSessionClosed: false,
+      lastMessage: displaySummary,
+      lastMessageTime: nowStr,
+      unreadAdminCount: 0,
+      unreadUserCount: (targetTicket.unreadUserCount || 0) + 1,
+      messages: [...targetTicket.messages, newMsg],
+    };
 
-      const updatedList = prev.map((t, idx) => {
-        if (idx === targetIdx) {
-          const updated: SupportTicket = {
-            ...t,
-            status: 'answered',
-            isSessionClosed: false,
-            lastMessage: displaySummary,
-            lastMessageTime: nowStr,
-            unreadAdminCount: 0,
-            unreadUserCount: (t.unreadUserCount || 0) + 1,
-            messages: [...t.messages, newMsg],
-          };
-          replyTicketToSync = updated;
-          return updated;
-        }
-        return t;
-      });
+    setSupportTickets((prev) =>
+      prev.map((ticket) => ticket.id === targetTicket.id ? updatedTicket : ticket)
+        .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime())
+    );
 
-      return updatedList.sort(
-        (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-      );
-    });
-
-    if (replyTicketToSync && isSupabaseConfigured()) {
-      syncTicketToSupabase(replyTicketToSync).catch((e) => console.warn('Admin reply sync notice:', e));
+    if (isSupabaseConfigured()) {
+      syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.warn('Admin support reply was not saved to Supabase:', result.error);
+      }).catch((error) => console.warn('Admin support reply sync failed:', error));
     }
 
-    const ticket = supportTickets.find((t) => t.id === ticketId || t.userId === ticketId) || supportTickets[0];
     logAuditAction(
       'SUPPORT_REPLY',
-      ticket ? `${ticket.userName} (${ticket.userId})` : 'User Ticket',
-      `Admin sent reply to support query.`
+      `${targetTicket.userName} (${targetTicket.userId})`,
+      'Admin sent reply to support query.'
     );
   };
 
@@ -1718,7 +1718,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Withdrawal Management
-  const submitWithdrawalRequest = ({
+  const submitWithdrawalRequest = async ({
     amount,
     accountHolderName,
     bankOrAddress,
@@ -1734,16 +1734,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     withdrawalType?: 'USD' | 'USDT';
     wallet?: 'funding' | 'trading';
     notes?: string;
-  }) => {
+  }): Promise<{ success: boolean; message: string }> => {
+    if (!isSupabaseConfigured()) {
+      return { success: false, message: 'Supabase is not configured. Your withdrawal request was not submitted.' };
+    }
     if (currentUser.status === 'suspended') {
       return { success: false, message: 'Account is suspended from withdrawals.' };
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { success: false, message: 'Please enter a valid withdrawal amount.' };
     }
     if (amount < systemSettings.minWithdrawal) {
       return { success: false, message: `Minimum withdrawal is $${systemSettings.minWithdrawal}.` };
     }
+    if (!accountHolderName.trim() || !bankOrAddress.trim() || !network.trim()) {
+      return { success: false, message: 'Please complete all required withdrawal details.' };
+    }
 
     const isFunding = wallet === 'funding';
-    const available = isFunding ? (currentUser.fundingBalance || 0) : (currentUser.tradingBalance || 0);
+    const previousFunding = Number(currentUser.fundingBalance || 0);
+    const previousTrading = Number(currentUser.tradingBalance || 0);
+    const available = isFunding ? previousFunding : previousTrading;
 
     if (available < amount) {
       return {
@@ -1753,39 +1764,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newFunding = isFunding
-      ? Number((currentUser.fundingBalance - amount).toFixed(2))
-      : currentUser.fundingBalance;
+      ? Number((previousFunding - amount).toFixed(2))
+      : previousFunding;
     const newTrading = isFunding
-      ? currentUser.tradingBalance
-      : Number((currentUser.tradingBalance - amount).toFixed(2));
-
-    // Deduct funds immediately upon request
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === currentUser.id
-          ? { ...u, tradingBalance: newTrading, fundingBalance: newFunding }
-          : u
-      )
-    );
-    updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+      ? previousTrading
+      : Number((previousTrading - amount).toFixed(2));
 
     const newReq: WithdrawalRequest = {
       id: `wth-${Date.now().toString().slice(-6)}`,
       userId: currentUser.id,
       userName: currentUser.name,
-      amount,
-      accountHolderName,
-      bankOrAddress,
-      network,
+      amount: Number(amount.toFixed(2)),
+      accountHolderName: accountHolderName.trim(),
+      bankOrAddress: bankOrAddress.trim(),
+      network: network.trim(),
       withdrawalType,
       sourceWallet: isFunding ? 'funding' : 'trading',
-      notes,
+      notes: notes?.trim() || '',
+      rejectReason: '',
       status: 'pending',
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      timestamp: new Date().toISOString(),
     };
 
+    // Persist the request first. Only debit the wallet after the request row exists.
+    const requestResult = await syncWithdrawalToSupabase(newReq);
+    if (!requestResult.success) {
+      return {
+        success: false,
+        message: `Could not save the withdrawal request: ${requestResult.error || 'Supabase insert failed'}`,
+      };
+    }
+
+    const balanceResult = await updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+    if (!balanceResult.success) {
+      const cleanup = await deleteWithdrawalFromSupabase(newReq.id);
+      if (!cleanup.success) {
+        await updateWithdrawalStatusInSupabase(
+          newReq.id,
+          'rejected',
+          'Cancelled automatically because the wallet balance could not be updated.'
+        );
+      }
+      return {
+        success: false,
+        message: `The request was saved but the wallet balance could not be updated. ${balanceResult.error || 'Please contact support before retrying.'}`,
+      };
+    }
+
+    setUsers((prev) =>
+      prev.map((user) =>
+        user.id === currentUser.id
+          ? { ...user, tradingBalance: newTrading, fundingBalance: newFunding }
+          : user
+      )
+    );
     setWithdrawalRequests((prev) => [newReq, ...prev]);
-    syncWithdrawalToSupabase(newReq);
 
     logAuditAction(
       'WITHDRAWAL_REQUESTED',
@@ -1799,23 +1832,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const approveWithdrawal = (withdrawalId: string) => {
-    const wth = withdrawalRequests.find((w) => w.id === withdrawalId);
+  const approveWithdrawal = async (withdrawalId: string): Promise<void> => {
+    const wth = withdrawalRequests.find((withdrawal) => withdrawal.id === withdrawalId);
     if (!wth || wth.status !== 'pending') return;
 
+    const result = await updateWithdrawalStatusInSupabase(withdrawalId, 'approved');
+    if (!result.success) {
+      console.warn('Could not approve withdrawal in Supabase:', result.error);
+      return;
+    }
+
     setWithdrawalRequests((prev) =>
-      prev.map((w) =>
-        w.id === withdrawalId
+      prev.map((withdrawal) =>
+        withdrawal.id === withdrawalId
           ? {
-              ...w,
+              ...withdrawal,
               status: 'approved',
               reviewedBy: adminName,
-              reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+              reviewedAt: new Date().toISOString(),
             }
-          : w
+          : withdrawal
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'approved');
 
     logAuditAction(
       'WITHDRAWAL_APPROVED',
@@ -1824,50 +1862,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const rejectWithdrawal = (withdrawalId: string, reason: string) => {
-    const wth = withdrawalRequests.find((w) => w.id === withdrawalId);
-    if (!wth || wth.status !== 'pending') return;
+  const rejectWithdrawal = async (withdrawalId: string, reason: string): Promise<boolean> => {
+    const wth = withdrawalRequests.find((withdrawal) => withdrawal.id === withdrawalId);
+    if (!wth || wth.status !== 'pending') return false;
 
-    const targetUser = users.find((u) => u.id === wth.userId);
+    const targetUser = users.find((user) => user.id === wth.userId);
+    if (!targetUser) {
+      console.warn('Could not refund rejected withdrawal: user not found.', wth.userId);
+      return false;
+    }
+
     const isFunding = wth.sourceWallet === 'funding';
-
-    const prevTrading = targetUser ? targetUser.tradingBalance : 0;
-    const prevFunding = targetUser ? targetUser.fundingBalance : 0;
-
+    const prevTrading = Number(targetUser.tradingBalance || 0);
+    const prevFunding = Number(targetUser.fundingBalance || 0);
     const refundedTrading = isFunding ? prevTrading : Number((prevTrading + wth.amount).toFixed(2));
     const refundedFunding = isFunding ? Number((prevFunding + wth.amount).toFixed(2)) : prevFunding;
+    const cleanReason = reason.trim() || 'Withdrawal canceled by administrator.';
 
-    // Refund back to user's wallet
+    // Refund the correct wallet first, then persist the rejection reason and status.
+    const balanceResult = await updateUserBalanceInSupabase(wth.userId, refundedTrading, refundedFunding);
+    if (!balanceResult.success) {
+      console.warn('Could not refund rejected withdrawal:', balanceResult.error);
+      return false;
+    }
+
+    const statusResult = await updateWithdrawalStatusInSupabase(withdrawalId, 'rejected', cleanReason);
+    if (!statusResult.success) {
+      // Restore the pre-review balances when the rejection update itself fails.
+      const rollback = await updateUserBalanceInSupabase(wth.userId, prevTrading, prevFunding);
+      if (!rollback.success) {
+        console.error('Withdrawal rejection failed and wallet rollback also failed:', rollback.error);
+      }
+      console.warn('Could not save withdrawal rejection reason:', statusResult.error);
+      return false;
+    }
+
+    const reviewedAt = new Date().toISOString();
     setUsers((prev) =>
-      prev.map((u) =>
-        u.id === wth.userId
-          ? { ...u, tradingBalance: refundedTrading, fundingBalance: refundedFunding }
-          : u
+      prev.map((user) =>
+        user.id === wth.userId
+          ? { ...user, tradingBalance: refundedTrading, fundingBalance: refundedFunding }
+          : user
       )
     );
-    updateUserBalanceInSupabase(wth.userId, refundedTrading, refundedFunding);
-
     setWithdrawalRequests((prev) =>
-      prev.map((w) =>
-        w.id === withdrawalId
+      prev.map((withdrawal) =>
+        withdrawal.id === withdrawalId
           ? {
-              ...w,
+              ...withdrawal,
               status: 'rejected',
-              rejectReason: reason,
-              notes: reason,
+              rejectReason: cleanReason,
+              notes: cleanReason,
               reviewedBy: adminName,
-              reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+              reviewedAt,
             }
-          : w
+          : withdrawal
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'rejected', reason);
 
     logAuditAction(
       'WITHDRAWAL_REJECTED',
       `${wth.userName} (#${wth.id})`,
-      `Rejected $${wth.amount.toLocaleString()} withdrawal and refunded to ${isFunding ? 'Funding' : 'Trading'} Wallet. Reason: ${reason}`
+      `Rejected $${wth.amount.toLocaleString()} withdrawal and refunded to ${isFunding ? 'Funding' : 'Trading'} Wallet. Reason: ${cleanReason}`
     );
+    return true;
   };
 
   const logAuditAction = (action: string, target: string, details: string) => {
@@ -1883,7 +1941,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs((prev) => [newLog, ...prev]);
   };
 
-  const transferFunds = ({
+  const transferFunds = async ({
     fromWallet,
     toWallet,
     amount,
@@ -1891,88 +1949,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     fromWallet: 'funding' | 'trading';
     toWallet: 'funding' | 'trading';
     amount: number;
-  }) => {
+  }): Promise<{ success: boolean; message: string }> => {
     if (fromWallet === toWallet) {
       return { success: false, message: 'Source and destination wallets must be different.' };
     }
-    if (amount <= 0 || isNaN(amount)) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       return { success: false, message: 'Please enter a valid transfer amount.' };
+    }
+    if (!isSupabaseConfigured()) {
+      return { success: false, message: 'Supabase is not configured. The transfer was not saved.' };
     }
 
     const currentFunding = Number((currentUser.fundingBalance || 0).toFixed(2));
     const currentTrading = Number((currentUser.tradingBalance || 0).toFixed(2));
-
-    if (fromWallet === 'funding') {
-      if (currentFunding < amount) {
-        return {
-          success: false,
-          message: `Insufficient Funding balance ($${currentFunding.toFixed(2)} available).`,
-        };
-      }
-
-      const newFunding = Number((currentFunding - amount).toFixed(2));
-      const newTrading = Number((currentTrading + amount).toFixed(2));
-
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === currentUser.id
-            ? {
-                ...u,
-                fundingBalance: newFunding,
-                tradingBalance: newTrading,
-              }
-            : u
-        )
-      );
-
-      // Persist to Supabase immediately so background sync/realtime preserves the new balances
-      updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
-
-      logAuditAction(
-        'WALLET_TRANSFER',
-        currentUser.name,
-        `Transferred $${amount.toFixed(2)} from Funding Wallet to Trading Wallet.`
-      );
+    const sourceBalance = fromWallet === 'funding' ? currentFunding : currentTrading;
+    if (sourceBalance < amount) {
       return {
-        success: true,
-        message: `Successfully transferred $${amount.toFixed(2)} to Trading Wallet!`,
-      };
-    } else {
-      if (currentTrading < amount) {
-        return {
-          success: false,
-          message: `Insufficient Trading balance ($${currentTrading.toFixed(2)} available).`,
-        };
-      }
-
-      const newTrading = Number((currentTrading - amount).toFixed(2));
-      const newFunding = Number((currentFunding + amount).toFixed(2));
-
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === currentUser.id
-            ? {
-                ...u,
-                tradingBalance: newTrading,
-                fundingBalance: newFunding,
-              }
-            : u
-        )
-      );
-
-      // Persist to Supabase immediately so background sync/realtime preserves the new balances
-      updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
-
-      logAuditAction(
-        'WALLET_TRANSFER',
-        currentUser.name,
-        `Transferred $${amount.toFixed(2)} from Trading Wallet to Funding Wallet.`
-      );
-      return {
-        success: true,
-        message: `Successfully transferred $${amount.toFixed(2)} to Funding Wallet!`,
+        success: false,
+        message: `Insufficient ${fromWallet === 'funding' ? 'Funding' : 'Trading'} balance ($${sourceBalance.toFixed(2)} available).`,
       };
     }
+
+    const newFunding = fromWallet === 'funding'
+      ? Number((currentFunding - amount).toFixed(2))
+      : Number((currentFunding + amount).toFixed(2));
+    const newTrading = fromWallet === 'trading'
+      ? Number((currentTrading - amount).toFixed(2))
+      : Number((currentTrading + amount).toFixed(2));
+
+    // Explicitly persist both database columns before reporting a successful transfer.
+    const balanceResult = await updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+    if (!balanceResult.success) {
+      return {
+        success: false,
+        message: `Could not save the wallet transfer: ${balanceResult.error || 'Supabase update failed'}`,
+      };
+    }
+
+    setUsers((prev) =>
+      prev.map((user) =>
+        user.id === currentUser.id
+          ? { ...user, tradingBalance: newTrading, fundingBalance: newFunding }
+          : user
+      )
+    );
+
+    logAuditAction(
+      'WALLET_TRANSFER',
+      currentUser.name,
+      `Transferred $${amount.toFixed(2)} from ${fromWallet === 'funding' ? 'Funding' : 'Trading'} Wallet to ${toWallet === 'funding' ? 'Funding' : 'Trading'} Wallet.`
+    );
+
+    return {
+      success: true,
+      message: `Successfully transferred $${amount.toFixed(2)} to ${toWallet === 'funding' ? 'Funding' : 'Trading'} Wallet!`,
+    };
   };
 
   const updateSystemSettings = (newSettings: Partial<SystemSettings>) => {

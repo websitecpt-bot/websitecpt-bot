@@ -188,13 +188,6 @@ export const AdminPanel: React.FC = () => {
       badge: 0,
     },
     {
-      id: 'users',
-      label: 'User Management',
-      description: 'Accounts & Suspensions',
-      icon: Users,
-      badge: 0,
-    },
-    {
       id: 'support',
       label: 'Support Inbox',
       description: 'Live 2-Way Chat Desk',
@@ -207,13 +200,6 @@ export const AdminPanel: React.FC = () => {
       label: 'Balance Management',
       description: 'Credits & Manual Adjustments',
       icon: DollarSign,
-      badge: 0,
-    },
-    {
-      id: 'markets',
-      label: 'Coins & Market Pairs',
-      description: 'Spread & Calibration',
-      icon: Activity,
       badge: 0,
     },
     {
@@ -239,13 +225,6 @@ export const AdminPanel: React.FC = () => {
       icon: TrendingUp,
       badge: activeTradesCount,
       badgeColor: 'bg-cyan-400 text-black',
-    },
-    {
-      id: 'reports',
-      label: 'Reports & History',
-      description: 'Cashflow & Audit Trail',
-      icon: FileText,
-      badge: 0,
     },
     {
       id: 'settings',

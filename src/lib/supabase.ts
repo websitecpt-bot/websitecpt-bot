@@ -241,6 +241,7 @@ export const fetchWithdrawalsFromSupabase = async (): Promise<WithdrawalRequest[
       timestamp: row.created_at,
       withdrawalType: (row.withdrawal_type || 'USD') as 'USD' | 'USDT',
       notes: row.notes || '',
+      rejectReason: row.reject_reason || row.notes || '',
     }));
   } catch (err) {
     console.warn('[Supabase fetchWithdrawals] exception:', err);
@@ -475,12 +476,21 @@ export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest): P
   }
 };
 
-export const updateWithdrawalStatusInSupabase = async (withdrawalId: string, status: string) => {
+export const updateWithdrawalStatusInSupabase = async (
+  withdrawalId: string,
+  status: string,
+  rejectReason?: string
+) => {
   if (!supabase) return;
   try {
-    let { error } = await supabase.from('withdrawal_requests').update({ status }).eq('id', withdrawalId);
+    const updatePayload: Record<string, any> = { status };
+    if (rejectReason) {
+      updatePayload.notes = rejectReason;
+      updatePayload.reject_reason = rejectReason;
+    }
+    let { error } = await supabase.from('withdrawal_requests').update(updatePayload).eq('id', withdrawalId);
     if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
-      await supabase.from('withdrawals').update({ status }).eq('id', withdrawalId);
+      await supabase.from('withdrawals').update(updatePayload).eq('id', withdrawalId);
     }
   } catch (err) {
     console.warn('Supabase updateWithdrawalStatus notice:', err);

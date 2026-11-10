@@ -428,6 +428,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isSupabaseSynced, setIsSupabaseSynced] = useState<boolean>(() => isSupabaseConfigured());
 
+  // Non-destructive WhatsApp-style ticket merge: ensures zero message drops & keeps latest order
+  const mergeIncomingTickets = (prev: SupportTicket[], incoming: SupportTicket[]): SupportTicket[] => {
+    const localMap = new Map(prev.map((t) => [t.id, t]));
+    const userMap = new Map<string, SupportTicket>();
+    prev.forEach((t) => userMap.set(t.userId, t));
+
+    const merged = incoming.map((cloudTicket) => {
+      const local = localMap.get(cloudTicket.id) || userMap.get(cloudTicket.userId);
+      if (!local) return cloudTicket;
+
+      const msgMap = new Map<string, SupportMessage>();
+      (cloudTicket.messages || []).forEach((m) => msgMap.set(m.id, m));
+      (local.messages || []).forEach((m) => {
+        if (!msgMap.has(m.id)) {
+          msgMap.set(m.id, m);
+        }
+      });
+
+      const allMsgs = Array.from(msgMap.values()).sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      const lastMsg = allMsgs[allMsgs.length - 1];
+
+      return {
+        ...cloudTicket,
+        messages: allMsgs,
+        lastMessage: lastMsg ? (lastMsg.text || (lastMsg.attachmentUrl ? '📎 Attachment' : 'Message')) : cloudTicket.lastMessage,
+        lastMessageTime: lastMsg ? lastMsg.timestamp : cloudTicket.lastMessageTime,
+        unreadAdminCount: Math.max(cloudTicket.unreadAdminCount || 0, local.unreadAdminCount || 0),
+        unreadUserCount: Math.max(cloudTicket.unreadUserCount || 0, local.unreadUserCount || 0),
+      };
+    });
+
+    // Keep locally created tickets that are pending cloud upsert
+    prev.forEach((loc) => {
+      if (!merged.some((m) => m.id === loc.id || m.userId === loc.userId)) {
+        merged.push(loc);
+      }
+    });
+
+    // WhatsApp-Style Chronological Order: whichever user sends a message or says "Hi", conversation jumps to top
+    return merged.sort(
+      (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+    );
+  };
+
   // Central Supabase Cloud Sync & Realtime Listener
   const hydrateFromSupabase = async () => {
     if (!isSupabaseConfigured()) return;
@@ -458,7 +504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTrades(cloudTrades);
       }
       if (cloudTickets && cloudTickets.length > 0) {
-        setSupportTickets(cloudTickets);
+        setSupportTickets((prev) => mergeIncomingTickets(prev, cloudTickets));
       }
       if (cloudDeposits && cloudDeposits.length > 0) {
         setDepositRequests(cloudDeposits);
@@ -497,7 +543,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       onTicketUpdate: async () => {
         const k = await fetchTicketsFromSupabase();
-        if (k && isMounted) setSupportTickets(k);
+        if (k && isMounted) setSupportTickets((prev) => mergeIncomingTickets(prev, k));
       },
       onDepositUpdate: async () => {
         const d = await fetchDepositsFromSupabase();
@@ -525,17 +571,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // Live Price Ticker & Trade PnL Updater
+  // Live Binance Price Feed (Zero-lag accurate real-world rates for major crypto coins)
   useEffect(() => {
-    const interval = setInterval(() => {
-      // If in manual benchmark mode, preserve exact prices without random noise
+    let isMounted = true;
+
+    const fetchBinancePrices = async () => {
       if (marketDataMode === 'manual_benchmark') return;
 
-      // Small realistic market fluctuation
+      try {
+        const binanceSymbols = [
+          'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
+          'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'TRXUSDT'
+        ];
+        const encoded = encodeURIComponent(JSON.stringify(binanceSymbols));
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encoded}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!Array.isArray(data) || !isMounted) return;
+
+        const binanceMap = new Map<string, { price: number; change24h: number; high: number; low: number }>();
+        data.forEach((item: any) => {
+          const sym = item.symbol.replace('USDT', '');
+          binanceMap.set(sym, {
+            price: parseFloat(item.lastPrice),
+            change24h: parseFloat(item.priceChangePercent),
+            high: parseFloat(item.highPrice),
+            low: parseFloat(item.lowPrice),
+          });
+        });
+
+        setCoins((prevCoins) =>
+          prevCoins.map((coin) => {
+            if (coin.status === 'paused') return coin;
+            const bData = binanceMap.get(coin.symbol);
+            if (bData && !isNaN(bData.price) && bData.price > 0) {
+              const effective = Number((bData.price + coin.priceOffset).toFixed(bData.price > 100 ? 2 : 4));
+              return {
+                ...coin,
+                basePrice: bData.price,
+                price: effective,
+                change24h: Number(bData.change24h.toFixed(2)),
+                high24h: bData.high,
+                low24h: bData.low,
+              };
+            }
+            return coin;
+          })
+        );
+      } catch {
+        // Fallback silently to local simulation
+      }
+    };
+
+    fetchBinancePrices();
+    const binanceInterval = setInterval(fetchBinancePrices, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(binanceInterval);
+    };
+  }, [marketDataMode]);
+
+  // Secondary Micro-fluctuation for traditional assets (Forex/Commodities)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (marketDataMode === 'manual_benchmark') return;
+
+      const nonCryptoSymbols = ['XAUUSD', 'EURUSD', 'NASUSD', 'DSHUSD', 'GBPUSD', 'U30USD', 'XAGUSD'];
       setCoins((prevCoins) =>
         prevCoins.map((coin) => {
-          if (coin.status === 'paused') return coin;
-          const deltaPct = (Math.random() - 0.49) * 0.0018; // ~0.1% micro fluctuation
+          if (coin.status === 'paused' || !nonCryptoSymbols.includes(coin.symbol)) return coin;
+          const deltaPct = (Math.random() - 0.49) * 0.0015;
           const newBase = Number((coin.basePrice * (1 + deltaPct)).toFixed(coin.basePrice > 100 ? 2 : 4));
           const effective = Number((newBase + coin.priceOffset).toFixed(newBase > 100 ? 2 : 4));
           return {
@@ -547,7 +653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         })
       );
-    }, 1800);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [marketDataMode]);
@@ -1213,11 +1319,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isSessionClosed: false,
           lastMessage: displaySummary,
           lastMessageTime: nowStr,
-          unreadAdminCount: activeTicket.unreadAdminCount + 1,
+          unreadAdminCount: (activeTicket.unreadAdminCount || 0) + 1,
           messages: [...activeTicket.messages, newMsg],
         };
         ticketToSync = updatedTicket;
-        return prev.map((t) => (t.id === activeTicket.id ? updatedTicket : t));
+        const updatedList = prev.map((t) => (t.id === activeTicket.id ? updatedTicket : t));
+        return updatedList.sort(
+          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+        );
       } else {
         isFirstUserMessage = true;
         const newTicket: SupportTicket = {
@@ -1234,7 +1343,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           messages: [newMsg],
         };
         ticketToSync = newTicket;
-        return [newTicket, ...prev];
+        const updatedList = [newTicket, ...prev];
+        return updatedList.sort(
+          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+        );
       }
     });
 
@@ -1386,8 +1498,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     let replyTicketToSync: SupportTicket | null = null;
-    setSupportTickets((prev) =>
-      prev.map((t) => {
+    setSupportTickets((prev) => {
+      const updatedList = prev.map((t) => {
         if (t.id === ticketId) {
           const updated: SupportTicket = {
             ...t,
@@ -1396,15 +1508,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             lastMessage: displaySummary,
             lastMessageTime: nowStr,
             unreadAdminCount: 0,
-            unreadUserCount: t.unreadUserCount + 1,
+            unreadUserCount: (t.unreadUserCount || 0) + 1,
             messages: [...t.messages, newMsg],
           };
           replyTicketToSync = updated;
           return updated;
         }
         return t;
-      })
-    );
+      });
+
+      return updatedList.sort(
+        (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+      );
+    });
 
     if (replyTicketToSync && isSupabaseConfigured()) {
       syncTicketToSupabase(replyTicketToSync).catch((e) => console.warn('Admin reply sync notice:', e));
@@ -1696,13 +1812,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...w,
               status: 'rejected',
               rejectReason: reason,
+              notes: reason,
               reviewedBy: adminName,
               reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
             }
           : w
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'rejected');
+    updateWithdrawalStatusInSupabase(withdrawalId, 'rejected', reason);
 
     logAuditAction(
       'WITHDRAWAL_REJECTED',

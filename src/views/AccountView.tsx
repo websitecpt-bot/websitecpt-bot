@@ -749,47 +749,54 @@ export const AccountView: React.FC = () => {
               ) : (
                 <div className="divide-y divide-[#171e2e]">
                   {userWithdrawals.map((w) => (
-                    <div key={w.id} className="py-3.5 flex items-center justify-between text-xs">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-white text-sm">
-                            ${w.amount.toFixed(2)}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase font-bold">
-                            {w.withdrawalType || 'USD'}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          {w.bankOrAddress}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          {w.timestamp} · {w.network}
-                        </div>
-                        {w.notes && (
-                          <div className="text-[10px] text-slate-400 italic">
-                            Note: {w.notes}
+                    <div key={w.id} className="py-3.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-white text-sm">
+                              ${w.amount.toFixed(2)}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase font-bold">
+                              {w.withdrawalType || 'USD'}
+                            </span>
                           </div>
-                        )}
+                          <div className="text-[11px] text-slate-400 font-mono">
+                            {w.bankOrAddress}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            {w.timestamp} · {w.network}
+                          </div>
+                          {w.notes && (
+                            <div className="text-[10px] text-slate-400 italic">
+                              Note: {w.notes}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-right space-y-1">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                              w.status === 'approved'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : w.status === 'rejected'
+                                ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                            }`}
+                          >
+                            {w.status}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="text-right space-y-1">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                            w.status === 'approved'
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : w.status === 'rejected'
-                              ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                          }`}
-                        >
-                          {w.status}
-                        </span>
-                        {w.rejectReason && (
-                          <div className="text-[10px] text-rose-400 max-w-[150px] truncate">
-                            {w.rejectReason}
+                      {w.status === 'rejected' && (w.rejectReason || w.notes) && (
+                        <div className="mt-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl p-2.5 text-xs text-rose-300 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-rose-400 block">Rejection Reason:</span>
+                            <span className="text-[11px] text-rose-200">{w.rejectReason || w.notes}</span>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

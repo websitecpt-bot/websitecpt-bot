@@ -96,10 +96,17 @@ CREATE TABLE IF NOT EXISTS public.withdrawal_requests (
   withdrawal_type TEXT DEFAULT 'USD',
   bank_or_address TEXT NOT NULL,
   network TEXT NOT NULL,
+  source_wallet TEXT NOT NULL DEFAULT 'funding',
   status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+  reject_reason TEXT DEFAULT '',
   notes TEXT DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Safe migration for databases where withdrawal_requests already existed.
+ALTER TABLE public.withdrawal_requests
+  ADD COLUMN IF NOT EXISTS source_wallet TEXT NOT NULL DEFAULT 'funding',
+  ADD COLUMN IF NOT EXISTS reject_reason TEXT DEFAULT '';
 
 -- Compatibility view for "withdrawals"
 CREATE OR REPLACE VIEW public.withdrawals AS SELECT * FROM public.withdrawal_requests;

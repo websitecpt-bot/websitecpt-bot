@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS public.trades (
   margin NUMERIC(15, 2) NOT NULL,
   position_size NUMERIC(15, 2) NOT NULL,
   entry_price NUMERIC(15, 4) NOT NULL,
-  current_price NUMERIC(15, 4) NOT NULL,
-  exit_price NUMERIC(15, 4) DEFAULT NULL,
+  current_price NUMERIC(30, 12) NOT NULL,
+  exit_price NUMERIC(30, 12) DEFAULT NULL,
   status TEXT DEFAULT 'OPEN', -- 'OPEN' or 'CLOSED'
   duration_minutes INTEGER DEFAULT 1,
   opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -46,8 +46,32 @@ CREATE TABLE IF NOT EXISTS public.trades (
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   pnl NUMERIC(15, 2) DEFAULT 0.00,
   pnl_percent NUMERIC(10, 2) DEFAULT 0.00,
-  fee NUMERIC(15, 2) DEFAULT 0.00
+  fee NUMERIC(15, 2) DEFAULT 0.00,
+  is_paper_trade BOOLEAN NOT NULL DEFAULT FALSE,
+  qa_override_mode TEXT DEFAULT NULL,
+  qa_locked_exit_price NUMERIC(30, 12) DEFAULT NULL,
+  qa_target_profit NUMERIC(15, 2) DEFAULT NULL,
+  qa_target_exit_price NUMERIC(30, 12) DEFAULT NULL,
+  qa_start_pnl NUMERIC(15, 2) DEFAULT NULL,
+  qa_override_started_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+  qa_last_price_update_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
+
+-- Additive migration for existing trades tables (safe to run more than once).
+ALTER TABLE public.trades
+  ADD COLUMN IF NOT EXISTS is_paper_trade BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS qa_override_mode TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS qa_locked_exit_price NUMERIC(30, 12) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS qa_target_profit NUMERIC(15, 2) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS qa_target_exit_price NUMERIC(30, 12) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS qa_start_pnl NUMERIC(15, 2) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS qa_override_started_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS qa_last_price_update_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+
+-- Increase precision for exact QA target-price calculations without changing existing values.
+ALTER TABLE public.trades
+  ALTER COLUMN current_price TYPE NUMERIC(30, 12) USING current_price::NUMERIC(30, 12),
+  ALTER COLUMN exit_price TYPE NUMERIC(30, 12) USING exit_price::NUMERIC(30, 12);
 
 -- 3. SUPPORT TICKETS & 2-WAY MESSAGES TABLE
 CREATE TABLE IF NOT EXISTS public.support_tickets (

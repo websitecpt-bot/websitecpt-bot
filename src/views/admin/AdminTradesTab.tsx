@@ -13,61 +13,6 @@ import {
   DollarSign,
 } from 'lucide-react';
 
-const TradeProfitReference: React.FC<{ trade: Trade }> = ({ trade }) => {
-  const [targetProfitInput, setTargetProfitInput] = useState('');
-  const targetProfit = Number(targetProfitInput);
-
-  const estimate = (() => {
-    if (!targetProfitInput.trim() || !Number.isFinite(targetProfit) || targetProfit <= 0) return null;
-
-    // Use the recorded position size because that is the notional used by the trading engine's PnL.
-    const notional = Number(trade.positionSize);
-    if (!Number.isFinite(notional) || notional <= 0 || trade.entryPrice <= 0) return null;
-
-    const isLong = trade.type === 'BUY';
-    const priceMove = (targetProfit / notional) * trade.entryPrice;
-    const rawExit = isLong
-      ? trade.entryPrice + priceMove
-      : trade.entryPrice - priceMove;
-
-    if (!Number.isFinite(rawExit) || rawExit <= 0) return { error: 'Target requires an invalid exit reference.' };
-
-    const referenceExit = Number(rawExit.toFixed(12));
-    const reconstructedPnl = Number((
-      ((isLong ? referenceExit - trade.entryPrice : trade.entryPrice - referenceExit) / trade.entryPrice) * notional
-    ).toFixed(2));
-
-    return { referenceExit, reconstructedPnl };
-  })();
-
-  return (
-    <div className="mt-2 space-y-1.5 min-w-[150px]">
-      <label className="block text-[9px] uppercase tracking-wide text-slate-400 font-bold">
-        Target profit reference · not applied
-      </label>
-      <input
-        type="number"
-        min="0.01"
-        step="0.01"
-        value={targetProfitInput}
-        onChange={(e) => setTargetProfitInput(e.target.value)}
-        placeholder="Enter target, e.g. 33333"
-        aria-label={`Hypothetical target profit for trade ${trade.id}`}
-        className="w-full max-w-[180px] bg-[#0b111a] border border-[#2a3a4c] rounded-md px-2 py-1.5 text-[10px] text-white font-mono outline-none focus:border-cyan-400"
-      />
-      {estimate && 'error' in estimate ? (
-        <div className="text-[9px] text-rose-300">{estimate.error}</div>
-      ) : estimate ? (
-        <div className="text-[9px] leading-4 text-cyan-200">
-          <div>Reference Exit: ${estimate.referenceExit.toLocaleString(undefined, { maximumFractionDigits: 12 })}</div>
-          <div>Recalculated PnL: ${estimate.reconstructedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-          <div className="text-amber-300/90">Estimate only. Live quote and trade ledger unchanged.</div>
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
 export const AdminTradesTab: React.FC = () => {
   const { trades, closeTrade, coins, setCoinPrice, applyMarketShock } = useApp();
 
@@ -313,9 +258,6 @@ export const AdminTradesTab: React.FC = () => {
                         <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
                           {t.durationMinutes}m duration
                         </div>
-                        {t.status === 'OPEN' && (
-                          <TradeProfitReference trade={t} />
-                        )}
                       </td>
                       <td className="px-4 py-3.5 font-mono text-slate-200">
                         ${t.entryPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}

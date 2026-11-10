@@ -63,6 +63,7 @@ export const AccountView: React.FC = () => {
   const [showWithdrawHistory, setShowWithdrawHistory] = useState(false);
   const [withdrawSourceWallet, setWithdrawSourceWallet] = useState<'funding' | 'trading'>('funding');
   const [withdrawFeedback, setWithdrawFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isSubmittingWithdrawal, setIsSubmittingWithdrawal] = useState(false);
 
   // Password Change state (Security View matching Screenshot 3)
   const [currentPassword, setCurrentPassword] = useState('');
@@ -171,13 +172,44 @@ export const AccountView: React.FC = () => {
   // User's withdrawals
   const userWithdrawals = withdrawalRequests.filter((w) => w.userId === currentUser.id);
 
-  const handleWithdrawSubmit = (e: React.FormEvent) => {
+  const submitWithdrawal = async (params: Parameters<typeof submitWithdrawalRequest>[0]) => {
+    if (isSubmittingWithdrawal) return;
+
+    setIsSubmittingWithdrawal(true);
+    setWithdrawFeedback(null);
+    try {
+      const res = await submitWithdrawalRequest(params);
+      setWithdrawFeedback({
+        type: res.success ? 'success' : 'error',
+        message: res.message,
+      });
+
+      if (res.success) {
+        setWithdrawAmount('');
+        setAccountNumber('');
+        setUsdtAddress('');
+        setAdditionalNotes('');
+      }
+    } catch (err: any) {
+      setWithdrawFeedback({
+        type: 'error',
+        message: err?.message || 'Unable to submit your withdrawal request. Please try again.',
+      });
+    } finally {
+      setIsSubmittingWithdrawal(false);
+    }
+  };
+
+  const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = parseFloat(withdrawAmount);
-    if (!amt || amt <= 0 || isNaN(amt)) {
+    if (isSubmittingWithdrawal) return;
+
+    const amt = Number(withdrawAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
       setWithdrawFeedback({ type: 'error', message: 'Please enter a valid withdrawal amount.' });
       return;
     }
+
     const available = withdrawSourceWallet === 'funding'
       ? (currentUser.fundingBalance || 0)
       : (currentUser.tradingBalance || 0);
@@ -204,53 +236,32 @@ export const AccountView: React.FC = () => {
         return;
       }
 
-      const res = submitWithdrawalRequest({
+      await submitWithdrawal({
         amount: amt,
-        accountHolderName,
-        bankOrAddress: `${bankOrProvider} - ${accountNumber}`,
+        accountHolderName: accountHolderName.trim(),
+        bankOrAddress: `${bankOrProvider.trim()} - ${accountNumber.trim()}`,
         network: 'Bank / Local USD Transfer',
         withdrawalType: 'USD',
         wallet: withdrawSourceWallet,
-        notes: additionalNotes,
+        notes: additionalNotes.trim(),
       });
-
-      setWithdrawFeedback({
-        type: res.success ? 'success' : 'error',
-        message: res.message,
-      });
-
-      if (res.success) {
-        setWithdrawAmount('');
-        setAccountNumber('');
-        setAdditionalNotes('');
-      }
-    } else {
-      if (!usdtAddress.trim()) {
-        setWithdrawFeedback({ type: 'error', message: 'Please enter your USDT receiving address.' });
-        return;
-      }
-
-      const res = submitWithdrawalRequest({
-        amount: amt,
-        accountHolderName: currentUser.name,
-        bankOrAddress: usdtAddress,
-        network: `USDT (${blockchainNetwork})`,
-        withdrawalType: 'USDT',
-        wallet: withdrawSourceWallet,
-        notes: additionalNotes,
-      });
-
-      setWithdrawFeedback({
-        type: res.success ? 'success' : 'error',
-        message: res.message,
-      });
-
-      if (res.success) {
-        setWithdrawAmount('');
-        setUsdtAddress('');
-        setAdditionalNotes('');
-      }
+      return;
     }
+
+    if (!usdtAddress.trim()) {
+      setWithdrawFeedback({ type: 'error', message: 'Please enter your USDT receiving address.' });
+      return;
+    }
+
+    await submitWithdrawal({
+      amount: amt,
+      accountHolderName: currentUser.name,
+      bankOrAddress: usdtAddress.trim(),
+      network: `USDT (${blockchainNetwork})`,
+      withdrawalType: 'USDT',
+      wallet: withdrawSourceWallet,
+      notes: additionalNotes.trim(),
+    });
   };
 
   const handleLogout = () => {
@@ -1067,9 +1078,10 @@ export const AccountView: React.FC = () => {
                 {/* Submit Withdrawal Request Button matching screenshot */}
                 <button
                   type="submit"
-                  className="w-full bg-[#05c075] hover:bg-[#04ad69] text-white font-extrabold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/25 active:scale-[0.99] cursor-pointer mt-2"
+                  disabled={isSubmittingWithdrawal}
+                  className="w-full bg-[#05c075] hover:bg-[#04ad69] disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/25 active:scale-[0.99] cursor-pointer mt-2"
                 >
-                  Submit Withdrawal Request
+                  {isSubmittingWithdrawal ? 'Submitting...' : 'Submit Withdrawal Request'}
                 </button>
               </form>
 

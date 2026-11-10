@@ -169,8 +169,17 @@ export const AccountView: React.FC = () => {
   // User's balance adjustments
   const userAdjustments = balanceAdjustments.filter((b) => b.userId === currentUser.id);
 
+  // Normalize wallet values and legacy cached withdrawal rows before rendering or validating.
+  const fundingBalance = Number.isFinite(Number(currentUser?.fundingBalance))
+    ? Number(currentUser.fundingBalance)
+    : 0;
+  const tradingBalance = Number.isFinite(Number(currentUser?.tradingBalance))
+    ? Number(currentUser.tradingBalance)
+    : 0;
+
   // User's withdrawals
-  const userWithdrawals = withdrawalRequests.filter((w) => w.userId === currentUser.id);
+  const userWithdrawals = (Array.isArray(withdrawalRequests) ? withdrawalRequests : [])
+    .filter((w) => Boolean(w) && w.userId === currentUser.id);
 
   const submitWithdrawal = async (params: Parameters<typeof submitWithdrawalRequest>[0]) => {
     if (isSubmittingWithdrawal) return;
@@ -210,9 +219,7 @@ export const AccountView: React.FC = () => {
       return;
     }
 
-    const available = withdrawSourceWallet === 'funding'
-      ? (currentUser.fundingBalance || 0)
-      : (currentUser.tradingBalance || 0);
+    const available = withdrawSourceWallet === 'funding' ? fundingBalance : tradingBalance;
 
     if (amt > available) {
       setWithdrawFeedback({
@@ -772,7 +779,7 @@ export const AccountView: React.FC = () => {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <span className="font-mono font-bold text-white text-sm">
-                              ${w.amount.toFixed(2)}
+                              ${Number(w.amount ?? 0).toFixed(2)}
                             </span>
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase font-bold">
                               {w.withdrawalType || 'USD'}
@@ -858,7 +865,7 @@ export const AccountView: React.FC = () => {
                         )}
                       </div>
                       <div className="text-sm font-mono font-bold text-amber-400 mt-0.5">
-                        ${(currentUser.fundingBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ${fundingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </div>
                     </button>
 
@@ -881,7 +888,7 @@ export const AccountView: React.FC = () => {
                         )}
                       </div>
                       <div className="text-sm font-mono font-bold text-white mt-0.5">
-                        ${(currentUser.tradingBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ${tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </div>
                     </button>
                   </div>
@@ -943,9 +950,7 @@ export const AccountView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          const maxAmt = withdrawSourceWallet === 'funding'
-                            ? (currentUser.fundingBalance || 0)
-                            : (currentUser.tradingBalance || 0);
+                          const maxAmt = withdrawSourceWallet === 'funding' ? fundingBalance : tradingBalance;
                           setWithdrawAmount(maxAmt > 0 ? maxAmt.toString() : '');
                         }}
                         className="px-2 py-0.5 bg-amber-400/15 hover:bg-amber-400/25 text-amber-400 font-bold text-[11px] rounded transition-colors cursor-pointer"
@@ -961,7 +966,7 @@ export const AccountView: React.FC = () => {
                     <span>
                       Available in {withdrawSourceWallet === 'funding' ? 'Funding Wallet' : 'Trading Wallet'}:{' '}
                       <strong className="text-amber-400 font-mono">
-                        ${(withdrawSourceWallet === 'funding' ? currentUser.fundingBalance : currentUser.tradingBalance).toFixed(2)} {withdrawalType === 'USD' ? 'USD' : 'USDT'}
+                        ${(withdrawSourceWallet === 'funding' ? fundingBalance : tradingBalance).toFixed(2)} {withdrawalType === 'USD' ? 'USD' : 'USDT'}
                       </strong>
                     </span>
                   </div>
@@ -1108,7 +1113,7 @@ export const AccountView: React.FC = () => {
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-mono font-bold text-white text-sm">
-                                ${w.amount.toFixed(2)}
+                                ${Number(w.amount ?? 0).toFixed(2)}
                               </span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase font-bold">
                                 {w.withdrawalType || 'USD'}

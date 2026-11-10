@@ -476,7 +476,7 @@ export const AdminSupportTab: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     ref={adminFileInputRef}
                     type="file"
@@ -499,20 +499,19 @@ export const AdminSupportTab: React.FC = () => {
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                         e.preventDefault();
                         handleSendReply(e);
                       }
                     }}
                     placeholder={`Reply directly to ${selectedTicket.userName}...`}
-                    className="flex-1 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none"
+                    className="w-full min-w-0 flex-1 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none"
                   />
 
                   <button
-                    type="button"
-                    onClick={(e) => handleSendReply(e)}
+                    type="submit"
                     disabled={!replyText.trim() && !adminAttachment}
-                    className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
+                    className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
                   >
                     <Send className="w-4 h-4" />
                     <span className="text-xs font-bold hidden sm:inline">Reply</span>

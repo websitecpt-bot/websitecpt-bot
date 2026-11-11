@@ -131,31 +131,40 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
       return null;
     }
     if (!data) return null;
-    return data.map((row: any) => ({
-      id: row.id,
-      userId: row.user_id,
-      userName: row.user_name,
-      symbol: row.symbol,
-      type: row.type as 'BUY' | 'SELL',
-      leverage: Number(row.leverage || 10),
-      margin: Number(row.margin || 0),
-      positionSize: Number(row.position_size || 0),
-      entryPrice: Number(row.entry_price || 0),
-      currentPrice: Number(row.current_price || 0),
-      exitPrice: row.exit_price
-        ? Number(row.exit_price)
-        : (row.status === 'CLOSED' ? Number(row.current_price || row.entry_price) : undefined),
-      status: row.status as 'OPEN' | 'CLOSED',
-      durationMinutes: Number(row.duration_minutes || 1),
-      openedAt: row.opened_at,
-      closedAt: row.closed_at || undefined,
-      expiresAt: row.expires_at,
-      pnl: Number(row.pnl || 0),
-      pnlPercent: Number(row.pnl_percent || 0),
-      fee: Number(row.fee || 0),
-      scheduledOutcome: row.scheduled_outcome || undefined,
-      scheduledPercent: row.scheduled_percent ? Number(row.scheduled_percent) : undefined,
-    }));
+    return data.map((row: any) => {
+      const duration = Number(row.duration_minutes || 1);
+      let expiryMs = row.expires_at ? new Date(row.expires_at).getTime() : NaN;
+      if (isNaN(expiryMs) || expiryMs <= 0) {
+        const openedMs = row.opened_at ? new Date(row.opened_at).getTime() : Date.now();
+        expiryMs = (isNaN(openedMs) ? Date.now() : openedMs) + duration * 60 * 1000;
+      }
+      return {
+        id: row.id,
+        userId: row.user_id,
+        userName: row.user_name,
+        symbol: row.symbol,
+        type: row.type as 'BUY' | 'SELL',
+        leverage: Number(row.leverage || 10),
+        margin: Number(row.margin || 0),
+        positionSize: Number(row.position_size || 0),
+        entryPrice: Number(row.entry_price || 0),
+        currentPrice: Number(row.current_price || 0),
+        exitPrice: row.exit_price
+          ? Number(row.exit_price)
+          : (row.status === 'CLOSED' ? Number(row.current_price || row.entry_price) : undefined),
+        status: row.status as 'OPEN' | 'CLOSED',
+        durationMinutes: duration,
+        openedAt: row.opened_at || new Date().toISOString(),
+        closedAt: row.closed_at || undefined,
+        expiresAt: row.expires_at || new Date(expiryMs).toISOString(),
+        expiresAtMs: expiryMs,
+        pnl: Number(row.pnl || 0),
+        pnlPercent: Number(row.pnl_percent || 0),
+        fee: Number(row.fee || 0),
+        scheduledOutcome: row.scheduled_outcome || undefined,
+        scheduledPercent: row.scheduled_percent ? Number(row.scheduled_percent) : undefined,
+      };
+    });
   } catch (err) {
     console.warn('[Supabase fetchTrades] exception:', err);
     return null;
@@ -180,6 +189,8 @@ export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null
       userName: row.user_name,
       userEmail: row.user_email || '',
       status: (row.status || 'pending') as 'pending' | 'answered' | 'closed',
+      isSessionClosed: row.is_session_closed ?? (row.status === 'closed'),
+      sessionNumber: row.session_number ? Number(row.session_number) : undefined,
       lastMessage: row.last_message || '',
       lastMessageTime: row.last_message_time || new Date().toISOString(),
       unreadAdminCount: Number(row.unread_admin_count || 0),
@@ -402,6 +413,8 @@ export const syncTicketToSupabase = async (ticket: SupportTicket): Promise<{ suc
       user_name: ticket.userName,
       user_email: ticket.userEmail,
       status: ticket.status,
+      is_session_closed: ticket.isSessionClosed ?? (ticket.status === 'closed'),
+      session_number: ticket.sessionNumber || null,
       unread_admin_count: ticket.unreadAdminCount || 0,
       unread_user_count: ticket.unreadUserCount || 0,
       last_message: ticket.lastMessage,

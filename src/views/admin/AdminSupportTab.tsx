@@ -195,7 +195,7 @@ export const AdminSupportTab: React.FC = () => {
       </div>
 
       {/* Main Dual-Pane Chat Layout (Responsive for Mobile & Desktop) */}
-      <div className="bg-[#10141f] border border-[#20283c] rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[660px]">
+      <div className="bg-[#10141f] border border-[#20283c] rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[calc(100vh-175px)] min-h-[520px] max-h-[820px]">
         {/* Left Inbox List (5 cols on desktop, full width on mobile when not inside a chat) */}
         <div
           className={`md:col-span-5 border-r border-[#1e2538] flex flex-col bg-[#121623] h-full ${

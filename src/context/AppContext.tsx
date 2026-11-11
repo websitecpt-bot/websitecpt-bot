@@ -436,11 +436,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Non-destructive WhatsApp-style ticket merge: ensures zero message drops & keeps latest order
   const mergeIncomingTickets = (prev: SupportTicket[], incoming: SupportTicket[]): SupportTicket[] => {
     const localMap = new Map(prev.map((t) => [t.id, t]));
-    const userMap = new Map<string, SupportTicket>();
-    prev.forEach((t) => userMap.set(t.userId, t));
 
     const merged = incoming.map((cloudTicket) => {
-      const local = localMap.get(cloudTicket.id) || userMap.get(cloudTicket.userId);
+      // Strictly match by ticket ID so distinct sessions for the same user NEVER mix messages!
+      const local = localMap.get(cloudTicket.id);
       if (!local) return cloudTicket;
 
       const msgMap = new Map<string, SupportMessage>();
@@ -458,6 +457,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return {
         ...cloudTicket,
+        isSessionClosed: cloudTicket.isSessionClosed ?? local.isSessionClosed ?? (cloudTicket.status === 'closed'),
+        sessionNumber: cloudTicket.sessionNumber || local.sessionNumber,
         messages: allMsgs,
         lastMessage: lastMsg ? (lastMsg.text || (lastMsg.attachmentUrl ? '📎 Attachment' : 'Message')) : cloudTicket.lastMessage,
         lastMessageTime: lastMsg ? lastMsg.timestamp : cloudTicket.lastMessageTime,
@@ -468,7 +469,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Keep locally created tickets that are pending cloud upsert
     prev.forEach((loc) => {
-      if (!merged.some((m) => m.id === loc.id || m.userId === loc.userId)) {
+      if (!merged.some((m) => m.id === loc.id)) {
         merged.push(loc);
       }
     });
@@ -506,7 +507,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
       if (cloudTrades && cloudTrades.length > 0) {
-        setTrades(cloudTrades);
+        setTrades((prev) => {
+          const cloudMap = new Map(cloudTrades.map((t) => [t.id, t]));
+          const merged = [...cloudTrades];
+          // Keep locally active open trades if not in cloud yet to prevent instant disappearance
+          prev.forEach((localTrade) => {
+            if (!cloudMap.has(localTrade.id) && localTrade.status === 'OPEN') {
+              merged.unshift(localTrade);
+            }
+          });
+          return merged;
+        });
       }
       if (cloudTickets && cloudTickets.length > 0) {
         setSupportTickets((prev) => mergeIncomingTickets(prev, cloudTickets));
@@ -679,14 +690,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const updated = prevTrades.map((t) => {
           if (t.status !== 'OPEN') return t;
 
-          const expiryMs =
-            t.expiresAtMs ||
-            (t.expiresAt.includes('T')
-              ? new Date(t.expiresAt).getTime()
-              : new Date(t.expiresAt.replace(' ', 'T') + 'Z').getTime() ||
-                new Date(t.expiresAt).getTime());
+          let expiryMs = t.expiresAtMs;
+          if (!expiryMs || isNaN(expiryMs) || expiryMs <= 0) {
+            if (t.expiresAt && t.expiresAt.includes('T')) {
+              expiryMs = new Date(t.expiresAt).getTime();
+            } else if (t.expiresAt) {
+              expiryMs = new Date(t.expiresAt.replace(' ', 'T') + 'Z').getTime() || new Date(t.expiresAt).getTime();
+            }
+          }
 
-          const isExpired = nowMs >= expiryMs;
+          // If still missing/NaN, calculate from openedAt + durationMinutes
+          if (!expiryMs || isNaN(expiryMs) || expiryMs <= 0) {
+            const openedMs = t.openedAt ? new Date(t.openedAt).getTime() : 0;
+            if (openedMs > 0 && !isNaN(openedMs)) {
+              expiryMs = openedMs + (t.durationMinutes || 1) * 60 * 1000;
+            }
+          }
+
+          // Protection: never auto-expire a trade opened less than 10 seconds ago
+          const openedTime = t.openedAt ? new Date(t.openedAt).getTime() : 0;
+          const isFreshTrade = openedTime > 0 && (nowMs - openedTime < 10000);
+
+          const isExpired = !isFreshTrade && expiryMs > 0 && !isNaN(expiryMs) && nowMs >= expiryMs;
 
           const targetCoin = coins.find((c) => c.symbol === t.symbol);
           const curPrice = targetCoin ? targetCoin.price : t.currentPrice;
@@ -1431,9 +1456,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setSupportTickets((prev) => {
       const userTickets = prev.filter((t) => t.userId === currentUser.id);
-      const activeTicket = userTickets[0]; // most recent ticket
+      // Strictly locate the current active open session
+      const activeTicket = userTickets.find((t) => !t.isSessionClosed && t.status !== 'closed');
 
-      if (activeTicket && !activeTicket.isSessionClosed) {
+      if (activeTicket) {
         const hadPriorUserMessage = activeTicket.messages.some((m) => m.sender === 'user');
         if (!hadPriorUserMessage) {
           isFirstUserMessage = true;
@@ -1454,6 +1480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
       } else {
         isFirstUserMessage = true;
+        const sessionNum = 240 + userTickets.length + 1;
         const newTicket: SupportTicket = {
           id: `ticket-${Date.now()}`,
           userId: currentUser.id,
@@ -1461,6 +1488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           userEmail: currentUser.email,
           status: 'pending',
           isSessionClosed: false,
+          sessionNumber: sessionNum,
           lastMessage: displaySummary,
           lastMessageTime: nowStr,
           unreadAdminCount: 1,
@@ -1494,7 +1522,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         setSupportTickets((prev) => {
           const userTickets = prev.filter((t) => t.userId === currentUser.id);
-          const activeTicket = userTickets[0];
+          const activeTicket = userTickets.find((t) => !t.isSessionClosed && t.status !== 'closed') || userTickets[0];
           if (!activeTicket) return prev;
           const withBotReply = {
             ...activeTicket,
@@ -1517,6 +1545,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetUser = users.find((u) => u.id === targetId) || currentUser;
     const nowStr = new Date().toISOString();
 
+    const userSessionCount = supportTickets.filter((t) => t.userId === targetId).length;
+    const sessionNum = 240 + userSessionCount + 1;
+
     const welcomeMsg: SupportMessage = {
       id: `msg-wel-${Date.now()}`,
       sender: 'admin',
@@ -1533,6 +1564,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userEmail: targetUser.email,
       status: 'pending',
       isSessionClosed: false,
+      sessionNumber: sessionNum,
       lastMessage: welcomeMsg.text,
       lastMessageTime: nowStr,
       unreadAdminCount: 0,
@@ -1540,7 +1572,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       messages: [welcomeMsg],
     };
 
-    setSupportTickets((prev) => [newTicket, ...prev]);
+    // Close any older open session for this user so only 1 session is active at a time
+    setSupportTickets((prev) => {
+      const updated = prev.map((t) =>
+        t.userId === targetId && !t.isSessionClosed && t.status !== 'closed'
+          ? { ...t, isSessionClosed: true, status: 'closed' as TicketStatus }
+          : t
+      );
+      return [newTicket, ...updated];
+    });
     if (isSupabaseConfigured()) {
       syncTicketToSupabase(newTicket).catch((e) => console.warn('New ticket sync notice:', e));
     }

@@ -26,28 +26,38 @@ export const TradeCountdown: React.FC<{
   onExpire: () => void;
 }> = ({ expiresAt, expiresAtMs, onExpire }) => {
   const getRemainingSeconds = () => {
-    const target =
-      expiresAtMs ||
-      (expiresAt.includes('T')
-        ? new Date(expiresAt).getTime()
-        : new Date(expiresAt.replace(' ', 'T') + 'Z').getTime() ||
-          new Date(expiresAt).getTime());
-    return Math.max(0, Math.ceil((target - Date.now()) / 1000));
+    let target = expiresAtMs;
+    if (!target || isNaN(target) || target <= 0) {
+      if (expiresAt && expiresAt.includes('T')) {
+        target = new Date(expiresAt).getTime();
+      } else if (expiresAt) {
+        target = new Date(expiresAt.replace(' ', 'T') + 'Z').getTime() || new Date(expiresAt).getTime();
+      }
+    }
+    if (!target || isNaN(target) || target <= 0) {
+      return 60; // Safe fallback so new trade never starts at 0s
+    }
+    const diff = Math.ceil((target - Date.now()) / 1000);
+    return Math.max(0, diff);
   };
 
   const [timeLeft, setTimeLeft] = useState<number>(getRemainingSeconds);
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
+  const hasTriggeredRef = useRef(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
       const remaining = getRemainingSeconds();
       setTimeLeft(remaining);
-      if (remaining <= 0) {
+      if (remaining <= 0 && !hasTriggeredRef.current) {
+        hasTriggeredRef.current = true;
         clearInterval(timer);
-        onExpire();
+        onExpireRef.current();
       }
-    }, 500);
+    }, 1000);
     return () => clearInterval(timer);
-  }, [expiresAt, expiresAtMs, onExpire]);
+  }, [expiresAt, expiresAtMs]);
 
   return (
     <span className="font-mono text-xs text-amber-400 font-bold flex items-center gap-1">

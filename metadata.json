@@ -1,6 +1,0 @@
-{
-  "name": "CPT Market UK - Trading & Admin Management System",
-  "description": "Complete professional trading platform with full-featured administrative control panel, real-time live support chat, user management, balance adjustments, order execution, and audit logging.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

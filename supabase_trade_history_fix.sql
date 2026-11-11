@@ -4,6 +4,32 @@
 
 BEGIN;
 
+-- Create the shared table only if this project does not have it yet.
+-- Existing trade rows are left untouched.
+CREATE TABLE IF NOT EXISTS public.trades (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  user_name TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  type TEXT NOT NULL,
+  leverage NUMERIC(10, 2) DEFAULT 10,
+  margin NUMERIC(15, 2) NOT NULL,
+  position_size NUMERIC(15, 2) NOT NULL,
+  entry_price NUMERIC(15, 4) NOT NULL,
+  current_price NUMERIC(15, 4) NOT NULL,
+  exit_price NUMERIC(15, 4) DEFAULT NULL,
+  status TEXT DEFAULT 'OPEN',
+  duration_minutes INTEGER DEFAULT 1,
+  opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  closed_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  pnl NUMERIC(15, 2) DEFAULT 0.00,
+  pnl_percent NUMERIC(10, 2) DEFAULT 0.00,
+  fee NUMERIC(15, 2) DEFAULT 0.00,
+  scheduled_outcome TEXT DEFAULT NULL,
+  scheduled_percent NUMERIC(10, 2) DEFAULT NULL
+);
+
 ALTER TABLE public.trades
   ADD COLUMN IF NOT EXISTS scheduled_outcome TEXT DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS scheduled_percent NUMERIC(10, 2) DEFAULT NULL;

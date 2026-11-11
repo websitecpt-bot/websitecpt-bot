@@ -133,3 +133,27 @@ BEGIN
   BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.withdrawal_requests; EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs; EXCEPTION WHEN OTHERS THEN NULL; END;
 END $$;
+
+-- 9. TRADE HISTORY & CROSS-DEVICE SYNC COMPATIBILITY
+-- The original CREATE TABLE IF NOT EXISTS does not add columns to an
+-- already-existing trades table. These ALTERs safely upgrade existing projects.
+ALTER TABLE public.trades
+  ADD COLUMN IF NOT EXISTS scheduled_outcome TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS scheduled_percent NUMERIC(10, 2) DEFAULT NULL;
+
+-- Keep user history and admin monitoring queries efficient.
+CREATE INDEX IF NOT EXISTS idx_trades_user_opened_at
+  ON public.trades (user_id, opened_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trades_status_opened_at
+  ON public.trades (status, opened_at DESC);
+
+-- Ensure the existing trades table is included in Supabase Realtime.
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.trades;
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+    WHEN undefined_object THEN RAISE NOTICE 'supabase_realtime publication not found; enable Realtime for public.trades in Supabase Dashboard.';
+  END;
+END $$;

@@ -1449,9 +1449,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!text.trim() && !attachment) return;
     const nowStr = new Date().toISOString();
     const displaySummary = text.trim() || (attachment ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}` : '');
-
     const newMsg: SupportMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       sender: 'user',
       senderName: currentUser.name,
       text: text.trim(),
@@ -1462,90 +1461,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachmentType: attachment?.type,
     };
 
-    let isFirstUserMessage = false;
-    let ticketToSync: SupportTicket | null = null;
-
-    setSupportTickets((prev) => {
-      const userTickets = prev.filter((t) => t.userId === currentUser.id);
-      // Strictly locate the current active open session
-      const activeTicket = userTickets.find((t) => !t.isSessionClosed && t.status !== 'closed');
-
-      if (activeTicket) {
-        const hadPriorUserMessage = activeTicket.messages.some((m) => m.sender === 'user');
-        if (!hadPriorUserMessage) {
-          isFirstUserMessage = true;
-        }
-        const updatedTicket: SupportTicket = {
+    const userTickets = supportTickets.filter((t) => t.userId === currentUser.id);
+    const activeTicket = userTickets.find((t) => !t.isSessionClosed && t.status !== 'closed');
+    const isFirstUserMessage = !activeTicket || !activeTicket.messages.some((m) => m.sender === 'user');
+    const updatedTicket: SupportTicket = activeTicket
+      ? {
           ...activeTicket,
           status: 'pending',
           isSessionClosed: false,
           lastMessage: displaySummary,
           lastMessageTime: nowStr,
           unreadAdminCount: (activeTicket.unreadAdminCount || 0) + 1,
-          messages: [...activeTicket.messages, newMsg],
-        };
-        ticketToSync = updatedTicket;
-        const updatedList = prev.map((t) => (t.id === activeTicket.id ? updatedTicket : t));
-        return updatedList.sort(
-          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-        );
-      } else {
-        isFirstUserMessage = true;
-        const sessionNum = 240 + userTickets.length + 1;
-        const newTicket: SupportTicket = {
-          id: `ticket-${Date.now()}`,
+          messages: [...(activeTicket.messages || []), newMsg],
+        }
+      : {
+          id: `ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           userId: currentUser.id,
           userName: currentUser.name,
           userEmail: currentUser.email,
           status: 'pending',
           isSessionClosed: false,
-          sessionNumber: sessionNum,
+          sessionNumber: 240 + userTickets.length + 1,
           lastMessage: displaySummary,
           lastMessageTime: nowStr,
           unreadAdminCount: 1,
           unreadUserCount: 0,
           messages: [newMsg],
         };
-        ticketToSync = newTicket;
-        const updatedList = [newTicket, ...prev];
-        return updatedList.sort(
-          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-        );
-      }
-    });
 
-    if (ticketToSync && isSupabaseConfigured()) {
-      syncTicketToSupabase(ticketToSync).catch((e) => console.warn('User ticket sync notice:', e));
+    const updatedList = activeTicket
+      ? supportTickets.map((t) => t.id === activeTicket.id ? updatedTicket : t)
+      : [updatedTicket, ...supportTickets];
+    setSupportTickets(updatedList.sort(
+      (x, y) => new Date(y.lastMessageTime || 0).getTime() - new Date(x.lastMessageTime || 0).getTime()
+    ));
+
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.error('[Support] User message was not saved:', result.error);
+      });
     }
 
-    // Send single automated initial acknowledgment only on customer's first message
     if (isFirstUserMessage) {
       setTimeout(() => {
         const replyNowStr = new Date().toISOString();
         const botReply: SupportMessage = {
-          id: `msg-ack-${Date.now()}`,
+          id: `msg-ack-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           sender: 'admin',
           senderName: 'CPT Support Desk',
-          text: 'Thank you for contacting us. Please allow us 1–2 minutes to respond. We appreciate your patience.',
+          text: 'Thank you for contacting us. Please allow our team a little time to respond. We appreciate your patience.',
           timestamp: replyNowStr,
           read: false,
         };
-
         setSupportTickets((prev) => {
-          const userTickets = prev.filter((t) => t.userId === currentUser.id);
-          const activeTicket = userTickets.find((t) => !t.isSessionClosed && t.status !== 'closed') || userTickets[0];
-          if (!activeTicket) return prev;
+          const ticket = prev.find((t) => t.id === updatedTicket.id);
+          if (!ticket) return prev;
           const withBotReply = {
-            ...activeTicket,
+            ...ticket,
             lastMessage: botReply.text,
             lastMessageTime: replyNowStr,
-            unreadUserCount: activeTicket.unreadUserCount + 1,
-            messages: [...activeTicket.messages, botReply],
+            unreadUserCount: (ticket.unreadUserCount || 0) + 1,
+            messages: [...ticket.messages, botReply],
           };
           if (isSupabaseConfigured()) {
-            syncTicketToSupabase(withBotReply).catch((e) => console.warn('Bot ack sync notice:', e));
+            void syncTicketToSupabase(withBotReply).then((result) => {
+              if (!result.success) console.error('[Support] Automatic acknowledgement was not saved:', result.error);
+            });
           }
-          return prev.map((t) => (t.id === activeTicket.id ? withBotReply : t));
+          return prev.map((t) => t.id === ticket.id ? withBotReply : t);
         });
       }, 1200);
     }
@@ -1701,9 +1684,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!text.trim() && !attachment) return;
     const nowStr = new Date().toISOString();
     const displaySummary = text.trim() || (attachment ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}` : '');
-
     const newMsg: SupportMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-admin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       sender: 'admin',
       senderName: adminName,
       text: text.trim(),
@@ -1714,46 +1696,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachmentType: attachment?.type,
     };
 
-    let replyTicketToSync: SupportTicket | null = null;
-    setSupportTickets((prev) => {
-      // Find matching index
-      let targetIdx = prev.findIndex((t) => t.id === ticketId || t.userId === ticketId);
-      if (targetIdx === -1 && prev.length > 0) {
-        targetIdx = 0; // fallback to top ticket if ID had slight mismatch
-      }
-
-      const updatedList = prev.map((t, idx) => {
-        if (idx === targetIdx) {
-          const updated: SupportTicket = {
-            ...t,
-            status: 'answered',
-            isSessionClosed: false,
-            lastMessage: displaySummary,
-            lastMessageTime: nowStr,
-            unreadAdminCount: 0,
-            unreadUserCount: (t.unreadUserCount || 0) + 1,
-            messages: [...t.messages, newMsg],
-          };
-          replyTicketToSync = updated;
-          return updated;
-        }
-        return t;
-      });
-
-      return updatedList.sort(
-        (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-      );
-    });
-
-    if (replyTicketToSync && isSupabaseConfigured()) {
-      syncTicketToSupabase(replyTicketToSync).catch((e) => console.warn('Admin reply sync notice:', e));
+    // Resolve the exact conversation only. Never send a reply to an unrelated first ticket.
+    const ticket = supportTickets.find((t) => t.id === ticketId || t.userId === ticketId);
+    if (!ticket) {
+      console.error('[Support] Cannot reply: selected ticket was not found.', ticketId);
+      return;
     }
+    const updatedTicket: SupportTicket = {
+      ...ticket,
+      status: 'answered',
+      isSessionClosed: false,
+      lastMessage: displaySummary,
+      lastMessageTime: nowStr,
+      unreadAdminCount: 0,
+      unreadUserCount: (ticket.unreadUserCount || 0) + 1,
+      messages: [...(ticket.messages || []), newMsg],
+    };
+    const updatedList = supportTickets.map((t) => t.id === ticket.id ? updatedTicket : t);
+    setSupportTickets(updatedList.sort(
+      (x, y) => new Date(y.lastMessageTime || 0).getTime() - new Date(x.lastMessageTime || 0).getTime()
+    ));
 
-    const ticket = supportTickets.find((t) => t.id === ticketId || t.userId === ticketId) || supportTickets[0];
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.error('[Support] Admin reply was not saved:', result.error);
+      });
+    }
     logAuditAction(
       'SUPPORT_REPLY',
-      ticket ? `${ticket.userName} (${ticket.userId})` : 'User Ticket',
-      `Admin sent reply to support query.`
+      `${ticket.userName} (${ticket.userId})`,
+      'Admin sent reply to support query.'
     );
   };
 

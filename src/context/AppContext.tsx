@@ -506,17 +506,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return merged;
         });
       }
-      if (cloudTrades && cloudTrades.length > 0) {
+      if (cloudTrades) {
         setTrades((prev) => {
           const cloudMap = new Map(cloudTrades.map((t) => [t.id, t]));
           const merged = [...cloudTrades];
-          // Keep locally active open trades if not in cloud yet to prevent instant disappearance
+          // Preserve local trades until their cloud write is confirmed, including completed history.
           prev.forEach((localTrade) => {
-            if (!cloudMap.has(localTrade.id) && localTrade.status === 'OPEN') {
-              merged.unshift(localTrade);
-            }
+            if (!cloudMap.has(localTrade.id)) merged.push(localTrade);
           });
-          return merged;
+          return merged.sort(
+            (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+          );
         });
       }
       if (cloudTickets && cloudTickets.length > 0) {
@@ -555,7 +555,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       onTradeUpdate: async () => {
         const t = await fetchTradesFromSupabase();
-        if (t && isMounted) setTrades(t);
+        if (t && isMounted) {
+          setTrades((prev) => {
+            const cloudMap = new Map(t.map((trade) => [trade.id, trade]));
+            const merged = [...t];
+            prev.forEach((localTrade) => {
+              if (!cloudMap.has(localTrade.id)) merged.push(localTrade);
+            });
+            return merged.sort(
+              (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+            );
+          });
+        }
       },
       onTicketUpdate: async () => {
         const k = await fetchTicketsFromSupabase();
@@ -1261,7 +1272,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const entryPrice = type === 'BUY' ? targetCoin.price + halfSpread : targetCoin.price - halfSpread;
 
     const newTrade: Trade = {
-      id: `tr-${Date.now().toString().slice(-6)}`,
+      id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       userId: currentUser.id,
       userName: currentUser.name,
       symbol,

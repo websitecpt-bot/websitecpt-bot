@@ -397,10 +397,14 @@ export const syncTradeToSupabase = async (trade: Trade): Promise<{ success: bool
       scheduled_percent: trade.scheduledPercent || null,
     }, { onConflict: 'id' });
 
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      console.error('[Supabase syncTradeToSupabase] failed to save trade:', error.message, trade.id);
+      return { success: false, error: error.message };
+    }
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message };
+    console.error('[Supabase syncTradeToSupabase] exception:', err, trade.id);
+    return { success: false, error: err?.message || 'Unable to save trade to Supabase' };
   }
 };
 

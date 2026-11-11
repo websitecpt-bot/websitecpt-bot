@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
   user_name TEXT NOT NULL,
   user_email TEXT DEFAULT '',
   status TEXT DEFAULT 'pending', -- 'pending', 'answered', 'closed'
+  is_session_closed BOOLEAN DEFAULT FALSE,
+  session_number INTEGER DEFAULT NULL,
   unread_admin_count INTEGER DEFAULT 0,
   unread_user_count INTEGER DEFAULT 0,
   last_message TEXT DEFAULT '',

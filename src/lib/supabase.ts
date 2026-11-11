@@ -409,51 +409,50 @@ export const syncTradeToSupabase = async (trade: Trade): Promise<{ success: bool
 };
 
 export const syncTicketToSupabase = async (ticket: SupportTicket): Promise<{ success: boolean; error?: string }> => {
-  if (!supabase) return { success: false, error: 'Not configured' };
+  if (!supabase) return { success: false, error: 'Supabase is not configured' };
   try {
     const payload = {
       id: ticket.id,
       user_id: ticket.userId,
       user_name: ticket.userName,
-      user_email: ticket.userEmail,
+      user_email: ticket.userEmail || '',
       status: ticket.status,
       is_session_closed: ticket.isSessionClosed ?? (ticket.status === 'closed'),
       session_number: ticket.sessionNumber || null,
       unread_admin_count: ticket.unreadAdminCount || 0,
       unread_user_count: ticket.unreadUserCount || 0,
-      last_message: ticket.lastMessage,
-      last_message_time: ticket.lastMessageTime,
-      messages: ticket.messages,
+      last_message: ticket.lastMessage || '',
+      last_message_time: ticket.lastMessageTime || new Date().toISOString(),
+      messages: ticket.messages || [],
     };
-    let { error } = await supabase.from('support_tickets').upsert(payload, { onConflict: 'id' });
-    if (error && (error.message?.includes('does not exist') || error.code === '42P01')) {
-      const fb = await supabase.from('support_messages').upsert(payload, { onConflict: 'id' });
-      if (fb.error) return { success: false, error: fb.error.message };
-      return { success: true };
-    }
-    if (error) {
-      console.warn('[Supabase syncTicketToSupabase notice]:', error.message);
-      // Fallback with base columns if schema has column differences
-      const minimal = {
-        id: ticket.id,
-        user_id: ticket.userId,
-        user_name: ticket.userName,
-        status: ticket.status,
-        last_message: ticket.lastMessage,
-        messages: ticket.messages,
-      };
-      const retry = await supabase.from('support_tickets').upsert(minimal, { onConflict: 'id' });
-      if (retry.error) {
-        return { success: false, error: error.message };
-      }
-      return { success: true };
+
+    // support_tickets is the canonical writable table. support_messages is a
+    // compatibility VIEW and must never be used as an upsert destination.
+    const { error } = await supabase.from('support_tickets').upsert(payload, { onConflict: 'id' });
+    if (!error) return { success: true };
+
+    console.error('[Support sync] Full ticket upsert failed:', error.message, ticket.id);
+
+    // Compatibility for older support_tickets schemas without newer metadata columns.
+    const minimal = {
+      id: ticket.id,
+      user_id: ticket.userId,
+      user_name: ticket.userName,
+      status: ticket.status,
+      last_message: ticket.lastMessage || '',
+      messages: ticket.messages || [],
+    };
+    const retry = await supabase.from('support_tickets').upsert(minimal, { onConflict: 'id' });
+    if (retry.error) {
+      console.error('[Support sync] Compatibility upsert failed:', retry.error.message, ticket.id);
+      return { success: false, error: retry.error.message };
     }
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message };
+    console.error('[Support sync] Unexpected exception:', err);
+    return { success: false, error: err?.message || 'Unable to save support message' };
   }
 };
-
 export const syncDepositToSupabase = async (deposit: DepositRequest): Promise<{ success: boolean; error?: string }> => {
   if (!supabase) return { success: false, error: 'Not configured' };
   try {

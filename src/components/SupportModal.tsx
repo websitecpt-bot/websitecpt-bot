@@ -213,14 +213,14 @@ export const SupportModal: React.FC = () => {
       <div className="bg-[#0b0e14] border border-[#1f273a] rounded-2xl sm:rounded-3xl w-full min-w-0 max-w-md h-[min(720px,calc(100dvh-12px))] max-h-[calc(100dvh-12px)] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* TOP STATUS BAR matching screenshot: CPT Markets (left) | UID: 827592 (center/right) | ✕ */}
-        <div className="bg-[#0e121b] border-b border-[#1b2234] px-5 py-3 flex items-center justify-between text-xs shrink-0">
+        <div className="bg-[#0e121b] border-b border-[#1b2234] px-3 sm:px-5 py-3 flex items-center justify-between gap-2 text-xs shrink-0 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-white text-sm tracking-tight">CPT</span>
             <span className="font-extrabold text-amber-400 text-sm tracking-tight">Markets</span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-xs text-slate-300 font-semibold">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <span className="font-mono text-[10px] sm:text-xs text-slate-300 font-semibold whitespace-nowrap">
               UID: {currentUser.uid}
             </span>
             <button
@@ -234,7 +234,7 @@ export const SupportModal: React.FC = () => {
 
         {/* VIEW 1: SUPPORT HOME / CHAT HISTORY (Matching image_c87678f6.png) */}
         {activeView === 'home' ? (
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-5 space-y-5 sm:space-y-6">
             {/* Title: Customer Support */}
             <div>
               <h2 className="text-2xl font-black text-white tracking-tight">
@@ -243,7 +243,7 @@ export const SupportModal: React.FC = () => {
             </div>
 
             {/* Main Action Card matching image_c87678f6.png */}
-            <div className="bg-[#121622] border border-[#212a3e] rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+            <div className="w-full min-w-0 bg-[#121622] border border-[#212a3e] rounded-2xl p-3 sm:p-5 space-y-4 shadow-xl">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-amber-400/10 border-2 border-amber-400 flex items-center justify-center shrink-0">
                   <span className="font-extrabold text-amber-400 text-xs tracking-wider">CPT</span>

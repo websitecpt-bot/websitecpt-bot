@@ -416,6 +416,18 @@ export const AdminSupportTab: React.FC = () => {
                 className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
               >
                 {selectedTicket.messages.map((msg) => {
+                  if (msg.isVisitEvent) {
+                    return (
+                      <div key={msg.id} className="w-full flex justify-center py-1">
+                        <div className="inline-flex max-w-[95%] flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-center text-[10px] font-medium text-sky-200">
+                          <Radio className="w-3 h-3 shrink-0 text-sky-400" />
+                          <span>{msg.senderName} entered Support</span>
+                          <span className="font-mono text-sky-300/70">{new Date(msg.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   if (msg.isSystem) {
                     return (
                       <div key={msg.id} className="w-full flex justify-center py-1">

@@ -17,7 +17,8 @@ import {
   Edit2,
   Trash2,
 } from 'lucide-react';
-import { compressImageFile } from '../utils/imageCompressor';
+import { SupportAttachment } from './SupportAttachment';
+import { uploadSupportAttachment } from '../lib/supabase';
 
 export const SupportModal: React.FC = () => {
   const {
@@ -40,6 +41,7 @@ export const SupportModal: React.FC = () => {
   const [editingMsgText, setEditingMsgText] = useState('');
   const [selectedAttachment, setSelectedAttachment] = useState<{
     url: string;
+    previewUrl?: string;
     name: string;
     type: 'image' | 'file';
   } | null>(null);
@@ -111,32 +113,36 @@ export const SupportModal: React.FC = () => {
     if (!file) return;
 
     const isImage = file.type.startsWith('image/');
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!isImage && !allowedTypes.includes(file.type)) {
+      window.alert('Please choose an image, PDF, DOC, or DOCX file.');
+      e.target.value = '';
+      return;
+    }
 
     try {
-      if (isImage) {
-        const compressed = await compressImageFile(file, {
-          maxWidth: 960,
-          maxHeight: 960,
-          quality: 0.8,
-        });
-        setSelectedAttachment({
-          url: compressed,
+      const storageReference = await uploadSupportAttachment(
+        file,
+        viewingTicket?.id || openTicket?.id || currentUser.id
+      );
+      const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
+
+      setSelectedAttachment((previous) => {
+        if (previous?.previewUrl) URL.revokeObjectURL(previous.previewUrl);
+        return {
+          url: storageReference,
+          previewUrl,
           name: file.name,
-          type: 'image',
-        });
-      } else {
-        const reader = new FileReader();
-        reader.onload = () => {
-          setSelectedAttachment({
-            url: reader.result as string,
-            name: file.name,
-            type: 'file',
-          });
+          type: isImage ? 'image' : 'file',
         };
-        reader.readAsDataURL(file);
-      }
+      });
     } catch (err) {
-      console.warn('Error reading chat attachment:', err);
+      console.error('Support attachment upload failed:', err);
+      window.alert(err instanceof Error ? err.message : 'Unable to upload attachment. Please try again.');
     }
 
     e.target.value = '';
@@ -174,6 +180,7 @@ export const SupportModal: React.FC = () => {
     }
 
     setInputMessage('');
+    if (selectedAttachment?.previewUrl) URL.revokeObjectURL(selectedAttachment.previewUrl);
     setSelectedAttachment(null);
   };
 
@@ -525,26 +532,12 @@ export const SupportModal: React.FC = () => {
                           ) : (
                             <>
                               {msg.attachmentUrl && (
-                                <div className="mb-2">
-                                  {msg.attachmentType === 'image' ? (
-                                    <div className="relative group/img">
-                                      <img
-                                        src={msg.attachmentUrl}
-                                        alt={msg.attachmentName || 'Attachment'}
-                                        onClick={() => setZoomImage(msg.attachmentUrl || null)}
-                                        className="rounded-xl max-h-52 max-w-full object-contain cursor-pointer hover:opacity-95 transition-opacity border border-black/20 bg-black/30"
-                                      />
-                                      <div className="absolute top-2 right-2 bg-black/70 text-white p-1 rounded-md opacity-0 group-hover/img:opacity-100 transition-opacity pointer-events-none">
-                                        <ZoomIn className="w-3.5 h-3.5" />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-2 p-2.5 rounded-xl bg-black/20 border border-black/15 text-xs">
-                                      <FileText className="w-4 h-4 shrink-0" />
-                                      <span className="truncate font-semibold">{msg.attachmentName || 'Document'}</span>
-                                    </div>
-                                  )}
-                                </div>
+                                <SupportAttachment
+                                  reference={msg.attachmentUrl}
+                                  name={msg.attachmentName}
+                                  type={msg.attachmentType}
+                                  onPreview={setZoomImage}
+                                />
                               )}
                               {msg.text && <div>{msg.text}</div>}
                             </>
@@ -590,7 +583,7 @@ export const SupportModal: React.FC = () => {
                   <div className="flex items-center gap-2.5 bg-[#0b0e15] p-2 rounded-xl border border-[#232c40] w-fit max-w-full">
                     {selectedAttachment.type === 'image' ? (
                       <img
-                        src={selectedAttachment.url}
+                        src={selectedAttachment.previewUrl || selectedAttachment.url}
                         alt="preview"
                         className="w-10 h-10 rounded-lg object-cover border border-[#2b354d]"
                       />
@@ -605,7 +598,10 @@ export const SupportModal: React.FC = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setSelectedAttachment(null)}
+                      onClick={() => {
+                        if (selectedAttachment.previewUrl) URL.revokeObjectURL(selectedAttachment.previewUrl);
+                        setSelectedAttachment(null);
+                      }}
                       className="p-1 rounded-full text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
                     >
                       <X className="w-4 h-4" />

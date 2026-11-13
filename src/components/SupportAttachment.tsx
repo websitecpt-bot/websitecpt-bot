@@ -51,19 +51,19 @@ export const SupportAttachment: React.FC<SupportAttachmentProps> = ({
   const safeName = name || (type === 'image' ? 'Image attachment' : 'Download attachment');
 
   return (
-    <div className="mb-2 w-fit max-w-full rounded-xl border border-[#303b54] bg-black/15 p-2">
+    <div className="mb-2 block w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#303b54] bg-black/15 p-2">
       {type === 'image' ? (
         previewUrl ? (
           <button
             type="button"
             onClick={() => onPreview?.(previewUrl)}
-            className="block max-w-full cursor-zoom-in"
+            className="block w-full min-w-0 max-w-full cursor-zoom-in"
             title="View image"
           >
             <img
               src={previewUrl}
               alt={safeName}
-              className="max-h-56 max-w-full rounded-lg object-contain"
+              className="block h-auto max-h-56 w-auto max-w-full rounded-lg object-contain"
             />
           </button>
         ) : (
@@ -79,8 +79,8 @@ export const SupportAttachment: React.FC<SupportAttachmentProps> = ({
         </div>
       )}
 
-      <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/10 pt-2">
-        <span className="min-w-0 truncate text-[10px] text-slate-400">{safeName}</span>
+      <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
+        <span className="min-w-0 flex-1 basis-[110px] truncate text-[10px] text-slate-400">{safeName}</span>
         {downloadUrl ? (
           <a
             href={downloadUrl}

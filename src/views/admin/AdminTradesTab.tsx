@@ -141,7 +141,7 @@ export const AdminTradesTab: React.FC = () => {
           </select>
 
           {/* Form to set exact benchmark price */}
-          <form onSubmit={handleApplyPrice} className="flex items-center gap-2 flex-1 min-w-[240px]">
+          <form onSubmit={handleApplyPrice} className="flex min-w-0 w-full sm:w-auto items-center gap-2 flex-1">
             <input
               type="number"
               step="any"

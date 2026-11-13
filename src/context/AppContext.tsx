@@ -340,11 +340,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isUserLoggedIn]);
 
   const [isSupportOpen, setIsSupportOpen] = useState(false);
-  const [activeSupportUsers, setActiveSupportUsers] = useState<{ userId: string; userName: string; uid: string; enteredAt: string }[]>(() =>
-    loadState('activeSupportUsers', [
-      { userId: 'user-518294', userName: 'Alex Trader', uid: '518294', enteredAt: 'Live Now' }
-    ])
-  );
+  const [activeSupportUsers, setActiveSupportUsers] = useState<{ userId: string; userName: string; uid: string; enteredAt: string }[]>([]);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -1764,16 +1760,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setUserViewingSupport = (userId: string, isViewing: boolean) => {
     const targetUser = users.find((u) => u.id === userId);
     if (!targetUser) return;
-    const timeStr = new Date().toLocaleTimeString();
 
+    if (!isViewing) {
+      setActiveSupportUsers((prev) => prev.filter((p) => p.userId !== userId));
+      return;
+    }
+
+    const now = new Date();
+    const nowStr = now.toISOString();
+
+    // Live presence: visible while the customer is inside the Support window.
     setActiveSupportUsers((prev) => {
-      if (isViewing) {
-        if (prev.some((p) => p.userId === userId)) return prev;
-        return [{ userId, userName: targetUser.name, uid: targetUser.uid, enteredAt: timeStr }, ...prev];
-      } else {
-        return prev.filter((p) => p.userId !== userId);
-      }
+      if (prev.some((p) => p.userId === userId)) return prev;
+      return [{ userId, userName: targetUser.name, uid: targetUser.uid, enteredAt: nowStr }, ...prev];
     });
+
+    // Persist every Support entry in the matching conversation so Admin can review
+    // the visit timeline even after the customer has left the Support window.
+    const activeTicket = supportTickets.find(
+      (ticket) => ticket.userId === userId && !ticket.isSessionClosed && ticket.status !== 'closed'
+    );
+    const visitEvent: SupportMessage = {
+      id: `msg-visit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sender: 'user',
+      senderName: targetUser.name,
+      text: 'Customer entered Support',
+      timestamp: nowStr,
+      read: true,
+      isVisitEvent: true,
+    };
+
+    const updatedTicket: SupportTicket = activeTicket
+      ? {
+          ...activeTicket,
+          lastMessage: visitEvent.text,
+          lastMessageTime: nowStr,
+          messages: [...(activeTicket.messages || []), visitEvent],
+        }
+      : {
+          id: `ticket-visit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          userId: targetUser.id,
+          userName: targetUser.name,
+          userEmail: targetUser.email,
+          status: 'pending',
+          isSessionClosed: false,
+          sessionNumber: 240 + supportTickets.filter((ticket) => ticket.userId === userId).length + 1,
+          lastMessage: visitEvent.text,
+          lastMessageTime: nowStr,
+          unreadAdminCount: 0,
+          unreadUserCount: 0,
+          messages: [visitEvent],
+        };
+
+    setSupportTickets((prev) => {
+      const exists = prev.some((ticket) => ticket.id === updatedTicket.id);
+      const updated = exists
+        ? prev.map((ticket) => ticket.id === updatedTicket.id ? updatedTicket : ticket)
+        : [updatedTicket, ...prev];
+      return updated.sort(
+        (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+      );
+    });
+
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.error('[Support] Customer Support visit was not saved:', result.error);
+      });
+    }
   };
 
   // Balance Management

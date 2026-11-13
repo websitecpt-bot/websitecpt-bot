@@ -409,15 +409,27 @@ export const SupportModal: React.FC = () => {
               ref={scrollContainerRef}
               className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
             >
-              {(!viewingTicket || viewingTicket.messages.length === 0) ? (
+              {(!viewingTicket || viewingTicket.messages.every((msg) => msg.isVisitEvent)) ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 text-slate-500">
                   <Headphones className="w-8 h-8 text-amber-400" />
                   <p className="text-xs">
-                    Welcome to CPT Markets Support. Send your message below to speak directly with an operator.
+                    No messages yet. Send a message to contact the support team.
                   </p>
                 </div>
               ) : (
-                viewingTicket.messages.map((msg) => {
+                viewingTicket.messages.filter((msg) => !msg.isVisitEvent).map((msg) => {
+                  if (msg.isSystem) {
+                    return (
+                      <div key={msg.id} className="w-full flex justify-center py-1">
+                        <div className="inline-flex max-w-[90%] items-center justify-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-center text-[11px] font-semibold leading-relaxed text-emerald-300 shadow-sm">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>{msg.text}</span>
+                          <span className="text-[9px] font-mono text-emerald-400/70 shrink-0">{formatMessageTime(msg.timestamp)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const isFromMe = msg.sender === 'user';
                   const isEditingThis = editingMsgId === msg.id;
 

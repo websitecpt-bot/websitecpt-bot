@@ -58,6 +58,10 @@ export interface SupportMessage {
   attachmentType?: 'image' | 'file';
   isEdited?: boolean;
   isDeleted?: boolean;
+  /** True for shared status notifications rendered as centered system events. */
+  isSystem?: boolean;
+  /** True for admin-only audit entries when a customer opens Support. */
+  isVisitEvent?: boolean;
 }
 
 export type TicketStatus = 'pending' | 'answered' | 'closed';

@@ -19,7 +19,7 @@ import {
   MoreVertical,
 } from 'lucide-react';
 import { SupportAttachment } from '../../components/SupportAttachment';
-import { uploadSupportAttachment } from '../../lib/supabase';
+import { compressImageFile } from '../../utils/imageCompressor';
 
 export const AdminSupportTab: React.FC = () => {
   const {
@@ -103,34 +103,35 @@ export const AdminSupportTab: React.FC = () => {
     if (!file) return;
 
     const isImage = file.type.startsWith('image/');
-    const allowedTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    if (!isImage && !allowedTypes.includes(file.type)) {
-      window.alert('Please choose an image, PDF, DOC, or DOCX file.');
-      e.target.value = '';
-      return;
-    }
-
     try {
-      if (!selectedTicket) throw new Error('Select a support conversation before attaching a file.');
-      const storageReference = await uploadSupportAttachment(file, selectedTicket.id);
-      const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
-
-      setAdminAttachment((previous) => {
-        if (previous?.previewUrl) URL.revokeObjectURL(previous.previewUrl);
-        return {
-          url: storageReference,
-          previewUrl,
+      if (isImage) {
+        // Keep the previous working image-compression + chat-message flow.
+        const compressed = await compressImageFile(file, {
+          maxWidth: 960,
+          maxHeight: 960,
+          quality: 0.8,
+        });
+        setAdminAttachment({
+          url: compressed,
           name: file.name,
-          type: isImage ? 'image' : 'file',
+          type: 'image',
+        });
+      } else {
+        // Store the file data with the chat message for shared preview/download.
+        const reader = new FileReader();
+        reader.onload = () => {
+          setAdminAttachment({
+            url: reader.result as string,
+            name: file.name,
+            type: 'file',
+          });
         };
-      });
+        reader.onerror = () => window.alert('Unable to read this file. Please try again.');
+        reader.readAsDataURL(file);
+      }
     } catch (err) {
-      console.error('Admin support attachment upload failed:', err);
-      window.alert(err instanceof Error ? err.message : 'Unable to upload attachment. Please try again.');
+      console.warn('Admin attachment read error:', err);
+      window.alert(err instanceof Error ? err.message : 'Unable to prepare attachment.');
     }
     e.target.value = '';
   };

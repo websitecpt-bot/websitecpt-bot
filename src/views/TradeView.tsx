@@ -357,7 +357,6 @@ export const TradeView: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {userOpenTrades.map((t) => {
-              const isProfit = t.pnl >= 0;
               return (
                 <div
                   key={t.id}
@@ -382,20 +381,11 @@ export const TradeView: React.FC = () => {
                   </div>
 
                   <div className="flex flex-col items-end gap-1.5 w-full sm:w-auto">
-                    <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
-                      <span
-                        className={`text-[10px] font-extrabold tracking-wider ${
-                          isProfit ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {isProfit ? 'PROFITABLE' : 'LOSING'}
-                      </span>
-                      <span
-                        className={`font-mono font-bold text-sm ${
-                          isProfit ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {isProfit ? '+' : ''}{t.pnl.toFixed(2)}
+                    <div className="flex items-center justify-end gap-2" aria-label="Floating PnL live indicator">
+                      <span className="text-xs font-semibold text-slate-300">Floating PnL</span>
+                      <span className="inline-flex items-center gap-1.5" aria-hidden="true">
+                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-floating-dot-red" />
+                        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-floating-dot-green" />
                       </span>
                     </div>
 

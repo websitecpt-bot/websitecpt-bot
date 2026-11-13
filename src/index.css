@@ -86,3 +86,37 @@ textarea {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+
+
+/* Alternating status lights shown beside the Floating PnL label. */
+@keyframes floatingDotBlink {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scale(0.82);
+    filter: brightness(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+    filter: brightness(1.35);
+  }
+}
+
+.animate-floating-dot-red,
+.animate-floating-dot-green {
+  animation: floatingDotBlink 1.4s ease-in-out infinite;
+  box-shadow: 0 0 7px currentColor;
+}
+
+.animate-floating-dot-green {
+  animation-delay: 0.7s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-floating-dot-red,
+  .animate-floating-dot-green {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -595,7 +595,7 @@ export const SupportModal: React.FC = () => {
                       <div className="text-[11px] font-semibold text-slate-200 truncate max-w-[200px]">
                         {selectedAttachment.name}
                       </div>
-                      <span className="text-[10px] text-emerald-400 font-mono">Ready to upload</span>
+                      <span className="text-[10px] text-emerald-400 font-mono">Ready to send</span>
                     </div>
                     <button
                       type="button"

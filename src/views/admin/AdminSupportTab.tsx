@@ -177,13 +177,13 @@ export const AdminSupportTab: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 max-w-full space-y-3 sm:space-y-4">
       {/* WhatsApp-Style Clean Header (Filter tabs permanently removed per requirement 2) */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+          <h2 className="min-w-0 text-base sm:text-lg font-bold text-white flex items-start sm:items-center gap-2">
             <MessageSquare className="w-5 h-5 text-amber-400" />
-            <span>Support Inbox (Live 2-Way Chat Desk)</span>
+            <span className="min-w-0 break-words">Support Inbox (Live 2-Way Chat Desk)</span>
           </h2>
           <p className="text-xs text-slate-400">
             Real-time chronological messaging. Conversations automatically jump to top upon new activity.
@@ -191,7 +191,7 @@ export const AdminSupportTab: React.FC = () => {
         </div>
 
         {/* Live sync indicator without status filter pills */}
-        <div className="flex items-center gap-2.5 bg-[#121622] px-3.5 py-2 rounded-xl border border-[#21293c] text-xs">
+        <div className="flex w-fit max-w-full flex-wrap items-center gap-2 bg-[#121622] px-3 py-2 rounded-xl border border-[#21293c] text-xs">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
           <span className="text-slate-300 font-medium">
             Active Conversations: <strong className="text-white font-mono">{supportTickets.length}</strong>
@@ -205,10 +205,10 @@ export const AdminSupportTab: React.FC = () => {
       </div>
 
       {/* Main Dual-Pane Chat Layout (Responsive for Mobile & Desktop) */}
-      <div className="bg-[#10141f] border border-[#20283c] rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[calc(100vh-175px)] min-h-[520px] max-h-[820px]">
+      <div className="w-full min-w-0 bg-[#10141f] border border-[#20283c] rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[calc(100dvh-190px)] min-h-[360px] max-h-none md:h-[calc(100vh-175px)] md:min-h-[520px] md:max-h-[820px]">
         {/* Left Inbox List (5 cols on desktop, full width on mobile when not inside a chat) */}
         <div
-          className={`md:col-span-5 border-r border-[#1e2538] flex flex-col bg-[#121623] h-full ${
+          className={`w-full min-w-0 md:col-span-5 border-r-0 md:border-r border-[#1e2538] flex flex-col bg-[#121623] h-full overflow-hidden ${
             mobileView === 'chat' ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -263,7 +263,7 @@ export const AdminSupportTab: React.FC = () => {
           </div>
 
           {/* Ticket list sorted chronologically */}
-          <div className="flex-1 overflow-y-auto divide-y divide-[#1b2234]">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden divide-y divide-[#1b2234]">
             {filteredTickets.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-500">
                 No conversations found matching search.
@@ -333,7 +333,7 @@ export const AdminSupportTab: React.FC = () => {
 
         {/* Right Active Conversation Pane (7 cols on desktop, full width on mobile when viewing chat) */}
         <div
-          className={`md:col-span-7 flex flex-col bg-[#0e121c] h-full overflow-hidden ${
+          className={`w-full min-w-0 md:col-span-7 flex flex-col bg-[#0e121c] h-full overflow-hidden ${
             mobileView === 'list' ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -341,7 +341,7 @@ export const AdminSupportTab: React.FC = () => {
             <>
               {/* Conversation Header with Mobile Back Button & Session Controls */}
               <div className="bg-[#141926] border-b border-[#1f273a] px-4 py-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2.5">
+                <div className="flex min-w-0 flex-1 items-center gap-2.5">
                   <button
                     onClick={() => setMobileView('list')}
                     className="md:hidden p-1.5 rounded-lg bg-[#1e2538] hover:bg-[#28324a] text-slate-300"
@@ -350,18 +350,18 @@ export const AdminSupportTab: React.FC = () => {
                     <ArrowLeft className="w-4 h-4 text-amber-400" />
                   </button>
 
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white capitalize">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <h3 className="text-sm font-bold text-white capitalize break-words">
                         {selectedTicket.userName}
                       </h3>
-                      <span className="text-[11px] font-mono text-amber-400">({selectedTicket.userEmail})</span>
+                      <span className="max-w-full break-all text-[10px] sm:text-[11px] font-mono text-amber-400">({selectedTicket.userEmail})</span>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">User ID: {selectedTicket.userId}</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                   {selectedTicket.isSessionClosed ? (
                     <button
                       onClick={() => reopenSupportSession(selectedTicket.id)}
@@ -409,9 +409,9 @@ export const AdminSupportTab: React.FC = () => {
 
               {/* Active User Live Presence */}
               {activeSupportUsers.some((u) => u.userId === selectedTicket.userId) && (
-                <div className="bg-emerald-500/15 border-b border-emerald-500/30 px-4 py-1.5 flex items-center gap-2 text-xs text-emerald-400 shrink-0">
+                <div className="bg-emerald-500/15 border-b border-emerald-500/30 px-3 sm:px-4 py-1.5 flex items-start gap-2 text-xs text-emerald-400 shrink-0 min-w-0">
                   <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-400 shrink-0" />
-                  <span className="font-semibold text-[11px]">
+                  <span className="min-w-0 break-words font-semibold text-[10px] sm:text-[11px]">
                     🟢 {selectedTicket.userName} is actively in Live Support right now
                   </span>
                 </div>
@@ -420,7 +420,7 @@ export const AdminSupportTab: React.FC = () => {
               {/* Chat Stream with Smooth Scroll, Edit/Delete Support, & Full Message History */}
               <div
                 ref={chatContainerRef}
-                className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
+                className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
               >
                 {selectedTicket.messages.map((msg) => {
                   if (msg.isVisitEvent) {
@@ -462,7 +462,7 @@ export const AdminSupportTab: React.FC = () => {
                         {msg.isEdited && <span className="text-[9px] text-amber-400 font-medium">(edited)</span>}
                       </div>
 
-                      <div className="flex items-center gap-1.5 max-w-[90%]">
+                      <div className="flex w-full min-w-0 items-center gap-1.5 max-w-[90%]">
                         {/* Action buttons on left for admin messages */}
                         {isFromAdmin && !msg.isDeleted && !isEditingThis && (
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
@@ -493,7 +493,7 @@ export const AdminSupportTab: React.FC = () => {
                         )}
 
                         <div
-                          className={`rounded-2xl px-4 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm flex-1 ${
+                          className={`min-w-0 max-w-full overflow-hidden break-words rounded-2xl px-3 sm:px-4 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm flex-1 ${
                             isFromAdmin
                               ? msg.isDeleted
                                 ? 'bg-amber-500/10 text-amber-300/60 border border-amber-500/20 italic rounded-tr-sm'
@@ -636,7 +636,7 @@ export const AdminSupportTab: React.FC = () => {
               ) : (
                 <>
                   {/* Shared system status notifications: click to post directly into both chat feeds. */}
-                  <div className="bg-[#121622] border-t border-[#1e2538] px-3 py-1.5 flex items-center gap-2 overflow-x-auto scrollbar-none text-[11px] shrink-0">
+                  <div className="bg-[#121622] border-t border-[#1e2538] px-2 sm:px-3 py-1.5 flex items-center gap-2 overflow-x-auto scrollbar-none text-[10px] sm:text-[11px] shrink-0 min-w-0">
                     <span className="text-slate-400 shrink-0 font-medium">Templates:</span>
                     <button
                       type="button"
@@ -664,7 +664,7 @@ export const AdminSupportTab: React.FC = () => {
                   {/* Reply Input Bar with Auto-Focus and Multi-device support */}
                   <form
                     onSubmit={handleSendReply}
-                    className="bg-[#141926] border-t border-[#1f273a] p-3 flex flex-col gap-2 shrink-0"
+                    className="w-full min-w-0 bg-[#141926] border-t border-[#1f273a] p-2.5 sm:p-3 flex flex-col gap-2 shrink-0"
                   >
                     {adminAttachment && (
                       <div className="flex items-center gap-2.5 bg-[#0b0e15] p-2 rounded-xl border border-[#232c40] w-fit max-w-full">
@@ -696,7 +696,7 @@ export const AdminSupportTab: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
                       <input
                         ref={adminFileInputRef}
                         type="file"
@@ -725,14 +725,14 @@ export const AdminSupportTab: React.FC = () => {
                           }
                         }}
                         placeholder={`Reply directly to ${selectedTicket.userName}...`}
-                        className="flex-1 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none"
+                        className="flex-1 w-0 min-w-0 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-2.5 sm:px-4 py-2.5 text-xs text-white outline-none"
                       />
 
                       <button
                         type="button"
                         onClick={(e) => handleSendReply(e)}
                         disabled={!replyText.trim() && !adminAttachment}
-                        className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
+                        className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-3 sm:px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
                       >
                         <Send className="w-4 h-4" />
                         <span className="text-xs font-bold hidden sm:inline">Reply</span>

@@ -18,7 +18,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { SupportAttachment } from './SupportAttachment';
-import { uploadSupportAttachment } from '../lib/supabase';
+import { compressImageFile } from '../utils/imageCompressor';
 
 export const SupportModal: React.FC = () => {
   const {
@@ -113,36 +113,37 @@ export const SupportModal: React.FC = () => {
     if (!file) return;
 
     const isImage = file.type.startsWith('image/');
-    const allowedTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    if (!isImage && !allowedTypes.includes(file.type)) {
-      window.alert('Please choose an image, PDF, DOC, or DOCX file.');
-      e.target.value = '';
-      return;
-    }
 
     try {
-      const storageReference = await uploadSupportAttachment(
-        file,
-        viewingTicket?.id || openTicket?.id || currentUser.id
-      );
-      const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
-
-      setSelectedAttachment((previous) => {
-        if (previous?.previewUrl) URL.revokeObjectURL(previous.previewUrl);
-        return {
-          url: storageReference,
-          previewUrl,
+      if (isImage) {
+        // Keep the previous working image-compression + chat-message flow.
+        const compressed = await compressImageFile(file, {
+          maxWidth: 960,
+          maxHeight: 960,
+          quality: 0.8,
+        });
+        setSelectedAttachment({
+          url: compressed,
           name: file.name,
-          type: isImage ? 'image' : 'file',
+          type: 'image',
+        });
+      } else {
+        // Store the file data in the support message so it can be viewed/downloaded
+        // by both sides without requiring a Supabase Storage auth session.
+        const reader = new FileReader();
+        reader.onload = () => {
+          setSelectedAttachment({
+            url: reader.result as string,
+            name: file.name,
+            type: 'file',
+          });
         };
-      });
+        reader.onerror = () => window.alert('Unable to read this file. Please try again.');
+        reader.readAsDataURL(file);
+      }
     } catch (err) {
-      console.error('Support attachment upload failed:', err);
-      window.alert(err instanceof Error ? err.message : 'Unable to upload attachment. Please try again.');
+      console.warn('Error reading chat attachment:', err);
+      window.alert(err instanceof Error ? err.message : 'Unable to prepare attachment.');
     }
 
     e.target.value = '';

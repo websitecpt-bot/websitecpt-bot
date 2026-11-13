@@ -205,7 +205,7 @@ export const AdminSupportTab: React.FC = () => {
       </div>
 
       {/* Main Dual-Pane Chat Layout (Responsive for Mobile & Desktop) */}
-      <div className="w-full min-w-0 bg-[#10141f] border border-[#20283c] rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[calc(100dvh-190px)] min-h-[360px] max-h-none md:h-[calc(100vh-175px)] md:min-h-[520px] md:max-h-[820px]">
+      <div className="w-full min-w-0 bg-[#10141f] border border-[#20283c] rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 h-[calc(100dvh-170px)] min-h-[320px] max-h-none md:h-[calc(100vh-175px)] md:min-h-[520px] md:max-h-[820px]">
         {/* Left Inbox List (5 cols on desktop, full width on mobile when not inside a chat) */}
         <div
           className={`w-full min-w-0 md:col-span-5 border-r-0 md:border-r border-[#1e2538] flex flex-col bg-[#121623] h-full overflow-hidden ${
@@ -667,7 +667,7 @@ export const AdminSupportTab: React.FC = () => {
                     className="w-full min-w-0 bg-[#141926] border-t border-[#1f273a] p-2.5 sm:p-3 flex flex-col gap-2 shrink-0"
                   >
                     {adminAttachment && (
-                      <div className="flex items-center gap-2.5 bg-[#0b0e15] p-2 rounded-xl border border-[#232c40] w-fit max-w-full">
+                      <div className="flex w-full min-w-0 items-center gap-2.5 bg-[#0b0e15] p-2 rounded-xl border border-[#232c40]">
                         {adminAttachment.type === 'image' ? (
                           <img
                             src={adminAttachment.previewUrl || adminAttachment.url}

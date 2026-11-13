@@ -47,7 +47,7 @@ export const AdminSettingsTab: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="w-full min-w-0 max-w-4xl space-y-4 sm:space-y-6">
       <div>
         <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
           <Settings className="w-5 h-5 text-cyan-400" />

@@ -120,3 +120,65 @@ textarea {
     transform: none;
   }
 }
+
+
+/* Shared phone-width safeguards for all Admin Portal screens. */
+.admin-portal,
+.admin-portal main,
+.admin-portal main > * {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-portal main {
+  overflow-x: hidden;
+}
+
+.admin-portal main .overflow-x-auto {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.admin-portal main input,
+.admin-portal main select,
+.admin-portal main textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-portal main img,
+.admin-portal main video,
+.admin-portal main canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+.admin-portal main pre,
+.admin-portal main code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 767px) {
+  .admin-portal main > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .admin-portal main .grid,
+  .admin-portal main .flex {
+    min-width: 0;
+  }
+
+  .admin-portal main .min-w-\\[240px\\] {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-portal main table {
+    min-width: max-content;
+  }
+}

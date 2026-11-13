@@ -24,6 +24,7 @@ export const AdminSupportTab: React.FC = () => {
   const {
     supportTickets,
     sendAdminReply,
+    addSupportSystemNotification,
     updateTicketStatus,
     closeSupportSession,
     reopenSupportSession,
@@ -149,8 +150,10 @@ export const AdminSupportTab: React.FC = () => {
     sendAdminReply(activeTarget.id, textToSend, attachmentToSend);
   };
 
-  const insertTemplate = (text: string) => {
-    setReplyText(text);
+  const postSystemNotification = (text: string) => {
+    const activeTarget = selectedTicket || sortedTickets.find((t) => t.id === selectedTicketId) || sortedTickets[0];
+    if (!activeTarget || activeTarget.isSessionClosed || activeTarget.status === 'closed') return;
+    addSupportSystemNotification(activeTarget.id, text);
   };
 
   const formatMessageTime = (timeStr: string) => {
@@ -413,6 +416,18 @@ export const AdminSupportTab: React.FC = () => {
                 className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
               >
                 {selectedTicket.messages.map((msg) => {
+                  if (msg.isSystem) {
+                    return (
+                      <div key={msg.id} className="w-full flex justify-center py-1">
+                        <div className="inline-flex max-w-[90%] items-center justify-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-center text-[11px] font-semibold leading-relaxed text-emerald-300 shadow-sm">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>{msg.text}</span>
+                          <span className="text-[9px] font-mono text-emerald-400/70 shrink-0">{formatMessageTime(msg.timestamp)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const isFromAdmin = msg.sender === 'admin';
                   const isEditingThis = editingMessageId === msg.id;
 
@@ -615,41 +630,29 @@ export const AdminSupportTab: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {/* Quick Reply Templates */}
+                  {/* Shared system status notifications: click to post directly into both chat feeds. */}
                   <div className="bg-[#121622] border-t border-[#1e2538] px-3 py-1.5 flex items-center gap-2 overflow-x-auto scrollbar-none text-[11px] shrink-0">
                     <span className="text-slate-400 shrink-0 font-medium">Templates:</span>
                     <button
                       type="button"
-                      onClick={() =>
-                        insertTemplate(
-                          'Hello! Our verified treasury deposit address is: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (USDT TRC-20). Please send the TXID once completed.'
-                        )
-                      }
-                      className="bg-[#182030] hover:bg-[#222c42] text-amber-400 px-2 py-1 rounded border border-[#26334d] whitespace-nowrap cursor-pointer"
+                      onClick={() => postSystemNotification('Deposit Confirmed')}
+                      className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 whitespace-nowrap cursor-pointer"
                     >
-                      💳 Deposit TRC-20 Address
+                      Deposit Confirmed
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        insertTemplate(
-                          'Your withdrawal request has been verified and processed by our finance desk. Thank you for trading with CPT Markets UK.'
-                        )
-                      }
-                      className="bg-[#182030] hover:bg-[#222c42] text-slate-300 hover:text-white px-2 py-1 rounded border border-[#26334d] whitespace-nowrap cursor-pointer"
+                      onClick={() => postSystemNotification('Mentor Commission Paid Successfully')}
+                      className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 whitespace-nowrap cursor-pointer"
                     >
-                      ✅ Withdrawal Processed
+                      Mentor Commission Paid Successfully
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        insertTemplate(
-                          'A promotional bonus credit has been approved and added to your trading wallet balance.'
-                        )
-                      }
-                      className="bg-[#182030] hover:bg-[#222c42] text-slate-300 hover:text-white px-2 py-1 rounded border border-[#26334d] whitespace-nowrap cursor-pointer"
+                      onClick={() => postSystemNotification('Withdrawal Successful')}
+                      className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 whitespace-nowrap cursor-pointer"
                     >
-                      🎁 Bonus Credited
+                      Withdrawal Successful
                     </button>
                   </div>
 

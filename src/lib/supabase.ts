@@ -79,6 +79,85 @@ export const supabase = isSupabaseConfigured()
 
 export const getSupabaseClient = () => supabase;
 
+const SUPPORT_ATTACHMENT_BUCKET = 'support-attachments';
+const SUPPORT_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Upload a support attachment to a private Supabase Storage bucket.
+ * The returned storage:// reference is persisted in the support message;
+ * it is not a public URL or an expiring signed URL.
+ */
+export const uploadSupportAttachment = async (file: File, ticketId: string): Promise<string> => {
+  if (!supabase) throw new Error('Supabase is not configured. Cannot upload support attachments.');
+  if (!file) throw new Error('No attachment selected.');
+  if (file.size > SUPPORT_ATTACHMENT_MAX_BYTES) {
+    throw new Error('The attachment is larger than the 20 MB limit.');
+  }
+
+  const safeName = file.name
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(-120) || 'attachment';
+  const safeTicketId = ticketId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 100) || 'support';
+  const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+  const objectPath = `${safeTicketId}/${uniqueName}`;
+
+  const { error } = await supabase.storage
+    .from(SUPPORT_ATTACHMENT_BUCKET)
+    .upload(objectPath, file, {
+      cacheControl: '3600',
+      contentType: file.type || 'application/octet-stream',
+      upsert: false,
+    });
+
+  if (error) {
+    console.error('[Support Storage] Upload failed:', error.message);
+    throw new Error(error.message || 'Unable to upload attachment.');
+  }
+
+  return `storage://${SUPPORT_ATTACHMENT_BUCKET}/${objectPath}`;
+};
+
+/**
+ * Resolve a stored attachment reference to a short-lived private signed URL.
+ * Legacy data URLs and ordinary HTTP URLs continue to work unchanged.
+ */
+export const getSupportAttachmentUrl = async (
+  reference: string,
+  download = false,
+  fileName?: string
+): Promise<string> => {
+  if (!reference.startsWith('storage://')) return reference;
+  if (!supabase) throw new Error('Supabase is not configured. Cannot open attachment.');
+
+  const storagePath = reference.slice('storage://'.length);
+  const separator = storagePath.indexOf('/');
+  if (separator <= 0 || separator === storagePath.length - 1) {
+    throw new Error('Invalid support attachment reference.');
+  }
+
+  const bucket = storagePath.slice(0, separator);
+  const objectPath = storagePath.slice(separator + 1);
+  if (bucket !== SUPPORT_ATTACHMENT_BUCKET) {
+    throw new Error('Unsupported support attachment storage bucket.');
+  }
+
+  const options = download ? { download: fileName || true } : undefined;
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 60 * 60 * 24, options);
+
+  if (error || !data?.signedUrl) {
+    console.error('[Support Storage] Signed URL failed:', error?.message);
+    throw new Error(error?.message || 'Unable to open attachment.');
+  }
+
+  return data.signedUrl;
+};
+
+
 // ==========================================
 // 1. Fetching Data from Supabase
 // ==========================================

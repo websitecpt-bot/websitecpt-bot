@@ -58,6 +58,8 @@ export interface SupportMessage {
   attachmentType?: 'image' | 'file';
   isEdited?: boolean;
   isDeleted?: boolean;
+  /** True for shared status notifications rendered as centered system events. */
+  isSystem?: boolean;
 }
 
 export type TicketStatus = 'pending' | 'answered' | 'closed';

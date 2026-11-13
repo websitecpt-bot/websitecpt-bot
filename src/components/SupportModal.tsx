@@ -409,7 +409,7 @@ export const SupportModal: React.FC = () => {
               ref={scrollContainerRef}
               className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
             >
-              {(!viewingTicket || viewingTicket.messages.length === 0) ? (
+              {(!viewingTicket || viewingTicket.messages.every((msg) => msg.isVisitEvent)) ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 text-slate-500">
                   <Headphones className="w-8 h-8 text-amber-400" />
                   <p className="text-xs">
@@ -417,7 +417,7 @@ export const SupportModal: React.FC = () => {
                   </p>
                 </div>
               ) : (
-                viewingTicket.messages.map((msg) => {
+                viewingTicket.messages.filter((msg) => !msg.isVisitEvent).map((msg) => {
                   if (msg.isSystem) {
                     return (
                       <div key={msg.id} className="w-full flex justify-center py-1">

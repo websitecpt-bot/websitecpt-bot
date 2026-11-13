@@ -173,12 +173,20 @@ textarea {
     min-width: 0;
   }
 
-  .admin-portal main .min-w-\\[240px\\] {
-    min-width: 0;
-    width: 100%;
-  }
-
   .admin-portal main table {
     min-width: max-content;
   }
+}
+
+.admin-portal main * {
+  min-width: 0;
+}
+
+.admin-portal main p,
+.admin-portal main h1,
+.admin-portal main h2,
+.admin-portal main h3,
+.admin-portal main span,
+.admin-portal main label {
+  overflow-wrap: anywhere;
 }

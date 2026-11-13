@@ -139,6 +139,7 @@ interface AppContextType {
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
   ) => void;
+  addSupportSystemNotification: (ticketId: string, text: string) => void;
   updateTicketStatus: (ticketId: string, status: TicketStatus) => void;
   closeSupportSession: (ticketId: string) => void;
   reopenSupportSession: (ticketId: string) => void;
@@ -1463,7 +1464,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const userTickets = supportTickets.filter((t) => t.userId === currentUser.id);
     const activeTicket = userTickets.find((t) => !t.isSessionClosed && t.status !== 'closed');
-    const isFirstUserMessage = !activeTicket || !activeTicket.messages.some((m) => m.sender === 'user');
     const updatedTicket: SupportTicket = activeTicket
       ? {
           ...activeTicket,
@@ -1502,36 +1502,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    if (isFirstUserMessage) {
-      setTimeout(() => {
-        const replyNowStr = new Date().toISOString();
-        const botReply: SupportMessage = {
-          id: `msg-ack-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          sender: 'admin',
-          senderName: 'CPT Support Desk',
-          text: 'Thank you for contacting us. Please allow our team a little time to respond. We appreciate your patience.',
-          timestamp: replyNowStr,
-          read: false,
-        };
-        setSupportTickets((prev) => {
-          const ticket = prev.find((t) => t.id === updatedTicket.id);
-          if (!ticket) return prev;
-          const withBotReply = {
-            ...ticket,
-            lastMessage: botReply.text,
-            lastMessageTime: replyNowStr,
-            unreadUserCount: (ticket.unreadUserCount || 0) + 1,
-            messages: [...ticket.messages, botReply],
-          };
-          if (isSupabaseConfigured()) {
-            void syncTicketToSupabase(withBotReply).then((result) => {
-              if (!result.success) console.error('[Support] Automatic acknowledgement was not saved:', result.error);
-            });
-          }
-          return prev.map((t) => t.id === ticket.id ? withBotReply : t);
-        });
-      }, 1200);
-    }
+
   };
 
   const startNewSupportChat = (userId?: string) => {
@@ -1542,15 +1513,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const userSessionCount = supportTickets.filter((t) => t.userId === targetId).length;
     const sessionNum = 240 + userSessionCount + 1;
 
-    const welcomeMsg: SupportMessage = {
-      id: `msg-wel-${Date.now()}`,
-      sender: 'admin',
-      senderName: 'CPT Support Desk',
-      text: `Welcome to a new support session, ${targetUser.name}! How may our 24/7 UK Desk assist you right now?`,
-      timestamp: nowStr,
-      read: true,
-    };
-
     const newTicket: SupportTicket = {
       id: `ticket-${Date.now()}`,
       userId: targetUser.id,
@@ -1559,11 +1521,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'pending',
       isSessionClosed: false,
       sessionNumber: sessionNum,
-      lastMessage: welcomeMsg.text,
+      lastMessage: '',
       lastMessageTime: nowStr,
       unreadAdminCount: 0,
-      unreadUserCount: 1,
-      messages: [welcomeMsg],
+      unreadUserCount: 0,
+      messages: [],
     };
 
     // Close any older open session for this user so only 1 session is active at a time
@@ -1726,6 +1688,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'SUPPORT_REPLY',
       `${ticket.userName} (${ticket.userId})`,
       'Admin sent reply to support query.'
+    );
+  };
+
+  // Add a shared system event to the conversation without sending an admin chat bubble.
+  const addSupportSystemNotification = (ticketId: string, text: string) => {
+    const cleanText = text.trim();
+    if (!cleanText) return;
+
+    const ticket = supportTickets.find((item) => item.id === ticketId);
+    if (!ticket || ticket.isSessionClosed || ticket.status === 'closed') return;
+
+    const nowStr = new Date().toISOString();
+    const notification: SupportMessage = {
+      id: `msg-system-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sender: 'admin',
+      senderName: 'CPT Markets System',
+      text: cleanText,
+      timestamp: nowStr,
+      read: false,
+      isSystem: true,
+    };
+
+    const updatedTicket: SupportTicket = {
+      ...ticket,
+      lastMessage: cleanText,
+      lastMessageTime: nowStr,
+      unreadAdminCount: 0,
+      unreadUserCount: (ticket.unreadUserCount || 0) + 1,
+      messages: [...(ticket.messages || []), notification],
+    };
+
+    setSupportTickets((prev) => {
+      if (!prev.some((item) => item.id === ticket.id)) return prev;
+      return prev
+        .map((item) => item.id === ticket.id ? updatedTicket : item)
+        .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
+    });
+
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.error('[Support] System notification was not saved:', result.error);
+      });
+    }
+
+    logAuditAction(
+      'SUPPORT_SYSTEM_NOTIFICATION',
+      `${ticket.userName} (${ticket.userId})`,
+      `Admin posted system status notification: ${cleanText}`
     );
   };
 
@@ -2230,6 +2240,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUserViewingSupport,
         sendUserMessage,
         sendAdminReply,
+        addSupportSystemNotification,
         updateTicketStatus,
         closeSupportSession,
         reopenSupportSession,

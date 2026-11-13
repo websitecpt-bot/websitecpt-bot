@@ -246,10 +246,10 @@ export const AdminPanel: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-[90vh] bg-[#0b0e14] flex flex-col">
+    <div className="admin-portal min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#0b0e14] flex flex-col">
       {/* Top Admin Status Bar */}
-      <div className="bg-[#121623] border-b border-[#1f273a] px-4 py-2.5 flex items-center justify-between text-xs select-none">
-        <div className="flex items-center gap-3">
+      <div className="bg-[#121623] border-b border-[#1f273a] px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs select-none">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="md:hidden p-1.5 rounded-lg bg-[#1a2133] text-slate-300"
@@ -257,9 +257,9 @@ export const AdminPanel: React.FC = () => {
             {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
 
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
-            <span className="font-bold text-white uppercase tracking-wider">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shrink-0"></span>
+            <span className="font-bold text-white uppercase tracking-wider text-[10px] sm:text-xs truncate">
               CPT Markets Admin Portal
             </span>
           </div>
@@ -296,7 +296,7 @@ export const AdminPanel: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-4">
           <div className="hidden sm:flex items-center gap-3 text-[11px] text-slate-400 font-mono">
             <span>Online Traders: <strong className="text-cyan-400">{users.filter((u) => u.isOnline).length}</strong></span>
             <span>Live Trades: <strong className="text-sky-400">{activeTradesCount}</strong></span>
@@ -304,10 +304,10 @@ export const AdminPanel: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('home')}
-            className="flex items-center gap-1.5 bg-[#142033] hover:bg-[#1a2c47] text-slate-200 border border-cyan-500/30 px-3 py-1 rounded-lg text-xs font-medium transition-colors"
+            className="flex items-center gap-1.5 bg-[#142033] hover:bg-[#1a2c47] text-slate-200 border border-cyan-500/30 px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Switch to Trading View</span>
+            <span className="hidden sm:inline">Switch to Trading View</span><span className="sm:hidden">Trading View</span>
           </button>
 
           <button
@@ -321,10 +321,13 @@ export const AdminPanel: React.FC = () => {
       </div>
 
       {/* Main Admin Content Body with Sidebar */}
-      <div className="flex-1 flex max-w-7xl w-full mx-auto p-4 sm:p-6 gap-6">
+      <div className="flex-1 flex min-w-0 max-w-7xl w-full mx-auto px-2 py-3 sm:p-6 gap-3 sm:gap-6">
+        {sidebarOpen && (
+          <button type="button" aria-label="Close admin navigation" onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-30 bg-black/65 md:hidden" />
+        )}
         {/* Sidebar Navigation */}
         <aside
-          className={`fixed md:static inset-y-0 left-0 z-40 w-64 bg-[#10141f] md:bg-transparent border-r md:border-r-0 border-[#1e2538] p-4 md:p-0 flex flex-col justify-between shrink-0 transition-transform ${
+          className={`fixed md:static inset-y-0 left-0 z-40 w-[min(84vw,18rem)] md:w-64 max-h-[100dvh] overflow-y-auto overscroll-contain bg-[#10141f] md:bg-transparent border-r md:border-r-0 border-[#1e2538] p-4 md:p-0 flex flex-col justify-between shrink-0 transition-transform ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
           }`}
         >
@@ -388,7 +391,7 @@ export const AdminPanel: React.FC = () => {
         </aside>
 
         {/* Dynamic Admin Sub-View */}
-        <main className="flex-1 overflow-x-hidden min-w-0">
+        <main className="flex-1 w-full overflow-x-hidden min-w-0">
           {activeAdminSubTab === 'dashboard' && (
             <AdminDashboardTab onNavigate={(tab) => setActiveAdminSubTab(tab)} />
           )}

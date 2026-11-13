@@ -209,18 +209,18 @@ export const SupportModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 select-none">
-      <div className="bg-[#0b0e14] border border-[#1f273a] rounded-3xl w-full max-w-md h-[680px] max-h-[94vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-1.5 sm:p-4 select-none">
+      <div className="bg-[#0b0e14] border border-[#1f273a] rounded-2xl sm:rounded-3xl w-full min-w-0 max-w-md h-[min(720px,calc(100dvh-12px))] max-h-[calc(100dvh-12px)] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* TOP STATUS BAR matching screenshot: CPT Markets (left) | UID: 827592 (center/right) | ✕ */}
-        <div className="bg-[#0e121b] border-b border-[#1b2234] px-5 py-3 flex items-center justify-between text-xs shrink-0">
+        <div className="bg-[#0e121b] border-b border-[#1b2234] px-3 sm:px-5 py-3 flex items-center justify-between gap-2 text-xs shrink-0 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-white text-sm tracking-tight">CPT</span>
             <span className="font-extrabold text-amber-400 text-sm tracking-tight">Markets</span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-xs text-slate-300 font-semibold">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <span className="font-mono text-[10px] sm:text-xs text-slate-300 font-semibold whitespace-nowrap">
               UID: {currentUser.uid}
             </span>
             <button
@@ -234,7 +234,7 @@ export const SupportModal: React.FC = () => {
 
         {/* VIEW 1: SUPPORT HOME / CHAT HISTORY (Matching image_c87678f6.png) */}
         {activeView === 'home' ? (
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-5 space-y-5 sm:space-y-6">
             {/* Title: Customer Support */}
             <div>
               <h2 className="text-2xl font-black text-white tracking-tight">
@@ -243,7 +243,7 @@ export const SupportModal: React.FC = () => {
             </div>
 
             {/* Main Action Card matching image_c87678f6.png */}
-            <div className="bg-[#121622] border border-[#212a3e] rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+            <div className="w-full min-w-0 bg-[#121622] border border-[#212a3e] rounded-2xl p-3 sm:p-5 space-y-4 shadow-xl">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-amber-400/10 border-2 border-amber-400 flex items-center justify-center shrink-0">
                   <span className="font-extrabold text-amber-400 text-xs tracking-wider">CPT</span>
@@ -353,7 +353,7 @@ export const SupportModal: React.FC = () => {
           </div>
         ) : (
           /* VIEW 2: ACTIVE / CLOSED CHAT ROOM */
-          <div className="flex-1 flex flex-col min-h-0 bg-[#0d1017]">
+          <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full overflow-hidden bg-[#0d1017]">
             {/* Conversation Header */}
             <div className="bg-[#121622] border-b border-[#1f273a] px-4 py-3 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
@@ -415,7 +415,7 @@ export const SupportModal: React.FC = () => {
             {/* Message Stream */}
             <div
               ref={scrollContainerRef}
-              className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
+              className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 overscroll-contain select-text"
             >
               {(!viewingTicket || viewingTicket.messages.every((msg) => msg.isVisitEvent)) ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 text-slate-500">
@@ -455,7 +455,7 @@ export const SupportModal: React.FC = () => {
                         {msg.isEdited && <span className="text-[9px] text-amber-400 font-medium">(edited)</span>}
                       </div>
 
-                      <div className="flex items-center gap-1.5 max-w-[88%]">
+                      <div className="flex w-full min-w-0 items-center gap-1.5 max-w-[88%]">
                         {/* Edit / Delete actions for user's own messages */}
                         {isFromMe && !msg.isDeleted && !isEditingThis && !isCurrentSessionClosed && (
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
@@ -486,7 +486,7 @@ export const SupportModal: React.FC = () => {
                         )}
 
                         <div
-                          className={`rounded-2xl px-4 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm flex-1 ${
+                          className={`min-w-0 max-w-full overflow-hidden break-words rounded-2xl px-3 sm:px-4 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm flex-1 ${
                             isFromMe
                               ? msg.isDeleted
                                 ? 'bg-amber-500/10 text-amber-300/60 border border-amber-500/20 italic rounded-tr-sm'
@@ -578,7 +578,7 @@ export const SupportModal: React.FC = () => {
               /* User Input Bar for Active Session */
               <form
                 onSubmit={handleSend}
-                className="bg-[#121623] border-t border-[#1f273a] p-3 flex flex-col gap-2 shrink-0"
+                className="w-full min-w-0 bg-[#121623] border-t border-[#1f273a] p-2.5 sm:p-3 flex flex-col gap-2 shrink-0"
               >
                 {selectedAttachment && (
                   <div className="flex items-center gap-2.5 bg-[#0b0e15] p-2 rounded-xl border border-[#232c40] w-fit max-w-full">
@@ -610,7 +610,7 @@ export const SupportModal: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -633,13 +633,13 @@ export const SupportModal: React.FC = () => {
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     placeholder="Type your message to support..."
-                    className="flex-1 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-4 py-2.5 text-xs text-white outline-none"
+                    className="flex-1 w-0 min-w-0 bg-[#0b0e15] border border-[#21293c] focus:border-amber-400 rounded-xl px-2.5 sm:px-4 py-2.5 text-xs text-white outline-none"
                   />
 
                   <button
                     type="submit"
                     disabled={!inputMessage.trim() && !selectedAttachment}
-                    className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
+                    className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-black font-extrabold px-3 sm:px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
                   >
                     <Send className="w-4 h-4" />
                     <span className="text-xs font-bold hidden sm:inline">Send</span>

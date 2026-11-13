@@ -56,7 +56,7 @@ const AppContent: React.FC = () => {
       {showHeader && <Header />}
 
       {/* Main Routed Content */}
-      <main className="flex-1 pb-24 md:pb-12">
+      <main className={activeTab === 'admin' ? 'flex-1 min-w-0 w-full overflow-x-hidden pb-0' : 'flex-1 min-w-0 w-full overflow-x-hidden pb-24 md:pb-12'}>
         {/* If user navigates to Admin tab, always show Admin Panel */}
         {activeTab === 'admin' ? (
           <AdminPanel />

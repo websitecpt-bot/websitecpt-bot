@@ -150,23 +150,25 @@ const AppContent: React.FC = () => {
         </nav>
       )}
 
-      {/* Bottom Footer (Clean footer with NO admin button) */}
+      {/* Responsive Footer: stack brand, copyright and support on mobile. */}
       {activeTab !== 'admin' && activeTab !== 'login' && isUserLoggedIn && !isMaintenanceActive && (
-        <footer className="bg-[#080b10] border-t border-[#181d2a] py-6 px-4 sm:px-6 text-xs text-slate-400">
-          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-white">CPT</span>
-              <span className="font-extrabold text-amber-400">Markets</span>
-              <span className="text-[10px] text-amber-500/80 uppercase tracking-widest ml-1 border border-amber-500/30 px-1 rounded">UK</span>
-              <span className="text-slate-500 ml-2">© 2026 CPT Market UK Ltd. All rights reserved.</span>
+        <footer className="w-full min-w-0 bg-[#080b10] border-t border-[#181d2a] px-4 sm:px-6 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:py-6 text-xs text-slate-400">
+          <div className="w-full max-w-6xl min-w-0 mx-auto flex flex-col items-center justify-center gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="w-full min-w-0 flex flex-col items-center gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-start sm:gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <span className="font-extrabold text-white">CPT</span>
+                <span className="font-extrabold text-amber-400">Markets</span>
+                <span className="text-[10px] text-amber-500/80 uppercase tracking-widest border border-amber-500/30 px-1 rounded">UK</span>
+              </div>
+              <span className="block w-full min-w-0 text-center text-slate-500 leading-relaxed whitespace-normal break-words sm:w-auto sm:text-left sm:ml-2">© 2026 CPT Market UK Ltd. All rights reserved.</span>
             </div>
 
-            <div className="flex items-center gap-6 text-slate-400">
+            <div className="flex items-center justify-center gap-6 text-slate-400">
               <button
                 onClick={() => setIsSupportOpen(true)}
-                className="hover:text-amber-400 transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="hover:text-amber-400 transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-normal"
               >
-                <Headphones className="w-3.5 h-3.5" />
+                <Headphones className="w-3.5 h-3.5 shrink-0" />
                 <span>24/7 Official Support</span>
               </button>
             </div>

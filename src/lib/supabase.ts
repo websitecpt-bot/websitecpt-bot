@@ -328,8 +328,9 @@ export const fetchWithdrawalsFromSupabase = async (): Promise<WithdrawalRequest[
       userId: row.user_id,
       userName: row.user_name,
       amount: Number(row.amount || 0),
-      accountHolderName: row.user_name,
+      accountHolderName: row.account_holder_name || row.user_name || '',
       bankOrAddress: row.bank_or_address || '',
+      sourceWallet: row.source_wallet === 'trading' ? 'trading' : 'funding',
       network: row.network || 'USDT',
       status: (row.status || 'pending') as 'pending' | 'approved' | 'rejected',
       timestamp: row.created_at,
@@ -582,6 +583,7 @@ export const syncWithdrawalToSupabase = async (withdrawal: WithdrawalRequest): P
       account_holder_name: withdrawal.accountHolderName || withdrawal.userName,
       amount: withdrawal.amount,
       withdrawal_type: withdrawal.withdrawalType,
+      source_wallet: withdrawal.sourceWallet || 'funding',
       bank_or_address: withdrawal.bankOrAddress,
       network: withdrawal.network,
       status: withdrawal.status,
@@ -622,10 +624,12 @@ export const updateWithdrawalStatusInSupabase = async (
   }
 };
 
-export const syncAuditLogToSupabase = async (log: AuditLog) => {
-  if (!supabase) return;
+export const syncAuditLogToSupabase = async (
+  log: AuditLog
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase is not configured' };
   try {
-    await supabase.from('audit_logs').insert({
+    const { error } = await supabase.from('audit_logs').upsert({
       id: log.id,
       admin_name: log.adminName,
       admin_id: log.adminId,
@@ -633,9 +637,24 @@ export const syncAuditLogToSupabase = async (log: AuditLog) => {
       target: log.target,
       details: log.details,
       timestamp: log.timestamp,
-    });
-  } catch {
-    // Audit logs non-critical
+    }, { onConflict: 'id' });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Unable to save activity log' };
+  }
+};
+
+export const deleteSupportTicketFromSupabase = async (
+  ticketId: string
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase is not configured' };
+  try {
+    const { error } = await supabase.from('support_tickets').delete().eq('id', ticketId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Unable to delete support session' };
   }
 };
 
@@ -650,6 +669,7 @@ export interface RealtimeHandlers {
   onTicketUpdate?: () => void;
   onDepositUpdate?: () => void;
   onWithdrawalUpdate?: () => void;
+  onAuditLogUpdate?: () => void;
 }
 
 export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): RealtimeChannel | null => {
@@ -684,6 +704,9 @@ export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): Realtim
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => {
         handlers.onWithdrawalUpdate?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, () => {
+        handlers.onAuditLogUpdate?.();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {

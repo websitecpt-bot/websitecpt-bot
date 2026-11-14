@@ -17,17 +17,20 @@ import {
   Wallet,
 } from 'lucide-react';
 
-export const AdminUsersTab: React.FC = () => {
+export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segment }) => {
   const {
     users,
     updateUserStatus,
     trades,
     balanceAdjustments,
     adjustUserBalance,
+    depositRequests,
+    withdrawalRequests,
+    supportTickets,
+    auditLogs,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [userFilter, setUserFilter] = useState<'all' | 'new'>('all');
   const [selectedUserForHistory, setSelectedUserForHistory] = useState<User | null>(null);
 
   // Quick balance adjustment modal
@@ -40,22 +43,29 @@ export const AdminUsersTab: React.FC = () => {
 
   const isNewTrader = (u: User) => {
     if (!u.createdAt) return false;
-    const createdMs = new Date(u.createdAt).getTime();
-    return Date.now() - createdMs < 48 * 3600 * 1000;
+    const raw = u.createdAt.trim();
+    const normalized = raw.includes('T')
+      ? raw
+      : raw.length === 10
+        ? `${raw}T00:00:00Z`
+        : `${raw.replace(' ', 'T')}Z`;
+    const createdMs = Date.parse(normalized);
+    const now = Date.now();
+    return Number.isFinite(createdMs) && createdMs <= now + 5 * 60 * 1000 && createdMs >= now - 48 * 3600 * 1000;
   };
 
-  const newTradersCount = users.filter(isNewTrader).length;
-
-  const filteredUsers = users.filter((u) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      u.name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      u.uid.includes(q);
-
-    if (!matchesSearch) return false;
-    if (userFilter === 'new') return isNewTrader(u);
-    return true;
+  const customerUsers = users.filter((user) => !user.role || user.role === 'user');
+  const newTradersCount = customerUsers.filter(isNewTrader).length;
+  const existingCustomersCount = customerUsers.length - newTradersCount;
+  const filteredUsers = customerUsers.filter((user) => {
+    const isInSection = segment === 'new' ? isNewTrader(user) : !isNewTrader(user);
+    if (!isInSection) return false;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return user.name.toLowerCase().includes(q) ||
+      user.email.toLowerCase().includes(q) ||
+      user.uid.toLowerCase().includes(q) ||
+      (user.phone || '').toLowerCase().includes(q);
   });
 
   const openAdjustModal = (user: User, mode: 'add' | 'deduct') => {
@@ -96,54 +106,36 @@ export const AdminUsersTab: React.FC = () => {
         <div className="flex items-center gap-3">
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>User Management ({users.length} Traders)</span>
-              {newTradersCount > 0 && (
+              <span>{segment === 'new' ? 'New User Accounts' : 'Existing Customers'} ({filteredUsers.length})</span>
+              {segment === 'new' && newTradersCount > 0 && (
                 <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full animate-pulse">
                   {newTradersCount} NEW
                 </span>
               )}
             </h2>
-            <p className="text-xs text-slate-400">
-              View accounts, monitor trading activity, suspend/activate accounts, and adjust balances.
+            <p className="text-[10px] sm:text-xs text-slate-400">
+              {segment === 'new'
+                ? 'Accounts registered in the last 48 hours.'
+                : 'Earlier customer accounts, profiles, transactions and management.'}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Filter Pills */}
-          <div className="flex items-center bg-[#141926] p-1 rounded-xl border border-[#232c40] text-xs">
-            <button
-              onClick={() => setUserFilter('all')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                userFilter === 'all'
-                  ? 'bg-cyan-400 text-black shadow-sm shadow-cyan-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              All ({users.length})
-            </button>
-            <button
-              onClick={() => setUserFilter('new')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                userFilter === 'new'
-                  ? 'bg-emerald-500 text-black shadow-sm'
-                  : 'text-emerald-400 hover:text-emerald-300'
-              }`}
-            >
-              <span>New Traders</span>
-              <span className="bg-emerald-400/30 text-emerald-200 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                {newTradersCount}
-              </span>
-            </button>
-          </div>
-
+          <span className={`rounded-lg border px-2.5 py-1.5 text-[9px] sm:text-[10px] font-bold ${
+            segment === 'new'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
+          }`}>
+            {segment === 'new' ? `New · ${newTradersCount} (48h)` : `Existing · ${existingCustomersCount}`}
+          </span>
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Name, Email, UID..."
+              placeholder="Search name, email, phone or UID..."
               className="w-full bg-[#141926] border border-[#232c40] focus:border-cyan-400 rounded-xl pl-9 pr-4 py-2 text-xs text-white outline-none"
             />
           </div>
@@ -153,7 +145,7 @@ export const AdminUsersTab: React.FC = () => {
       {/* Users Table */}
       <div className="bg-[#121622] border border-[#21293c] rounded-xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="admin-customer-table w-full text-left text-xs">
             <thead className="bg-[#161c2b] border-b border-[#21293c] text-slate-400 font-semibold uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-3">Trader</th>
@@ -168,6 +160,11 @@ export const AdminUsersTab: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1b2234]">
+              {filteredUsers.length === 0 && (
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-500">
+                  {segment === 'new' ? 'No customer registrations in the last 48 hours.' : 'No existing customers match this search.'}
+                </td></tr>
+              )}
               {filteredUsers.map((user) => {
                 const userTrades = trades.filter((t) => t.userId === user.id);
                 const isNew = isNewTrader(user);
@@ -318,8 +315,8 @@ export const AdminUsersTab: React.FC = () => {
       {/* USER COMPLETE HISTORY DRILL-DOWN MODAL (Requirement 2: View complete trading and transaction history of a specific user) */}
       {selectedUserForHistory && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111522] border border-[#232c40] rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="bg-[#151a28] border-b border-[#20283c] px-6 py-4 flex items-center justify-between">
+          <div className="bg-[#111522] border border-[#232c40] rounded-xl sm:rounded-2xl w-full max-w-3xl max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="bg-[#151a28] border-b border-[#20283c] px-3 sm:px-5 py-3 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <span>Trading & Transaction Record:</span>
@@ -338,7 +335,30 @@ export const AdminUsersTab: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6">
+            <div className="p-3 sm:p-5 overflow-y-auto overscroll-contain space-y-4">
+              <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  ['Email', selectedUserForHistory.email || 'Not provided'],
+                  ['Phone', selectedUserForHistory.phone || 'Not provided'],
+                  ['Status', selectedUserForHistory.status],
+                  ['Registered', selectedUserForHistory.createdAt || 'Not recorded'],
+                  ['Trading', `${selectedUserForHistory.tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`],
+                  ['Funding', `${selectedUserForHistory.fundingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`],
+                  ['Referral UID', selectedUserForHistory.referredByUid || 'Direct'],
+                  ['Presence', selectedUserForHistory.isOnline ? 'Online' : 'Offline'],
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0 rounded-lg border border-[#263149] bg-[#151b2a] p-2">
+                    <div className="text-[9px] uppercase tracking-wide text-slate-500">{label}</div>
+                    <div className="mt-1 break-words text-[10px] sm:text-xs font-semibold text-slate-200">{value}</div>
+                  </div>
+                ))}
+              </section>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg border border-[#263149] bg-[#151b2a] p-2"><div className="text-[9px] text-slate-500">Trades</div><div className="text-sm font-bold text-white">{trades.filter((t) => t.userId === selectedUserForHistory.id).length}</div></div>
+                <div className="rounded-lg border border-[#263149] bg-[#151b2a] p-2"><div className="text-[9px] text-slate-500">Deposits</div><div className="text-sm font-bold text-white">{depositRequests.filter((d) => d.userId === selectedUserForHistory.id).length}</div></div>
+                <div className="rounded-lg border border-[#263149] bg-[#151b2a] p-2"><div className="text-[9px] text-slate-500">Withdrawals</div><div className="text-sm font-bold text-white">{withdrawalRequests.filter((w) => w.userId === selectedUserForHistory.id).length}</div></div>
+              </div>
+
               {/* Trades section */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">
@@ -395,10 +415,94 @@ export const AdminUsersTab: React.FC = () => {
                 )}
               </div>
 
+              {/* Customer deposit history */}
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-2">Deposit History</h4>
+                {depositRequests.filter((d) => d.userId === selectedUserForHistory.id).length === 0 ? <p className="text-xs text-slate-500">No deposit requests recorded.</p> : (
+                  <div className="space-y-2">
+                    {depositRequests.filter((d) => d.userId === selectedUserForHistory.id).map((d) => (
+                      <div key={d.id} className="rounded-lg border border-[#263149] bg-[#151b2a] p-3 text-[10px] sm:text-xs">
+                        <div className="flex flex-wrap justify-between gap-2"><strong className="text-white">${d.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} · {d.status.toUpperCase()}</strong><span className="text-slate-500">{d.timestamp}</span></div>
+                        <div className="mt-1 break-words text-slate-400">{d.paymentMethod} · {d.network || 'Network not recorded'}</div>
+                        <div className="mt-1 break-all font-mono text-slate-500">TXID: {d.txid || 'Not recorded'}</div>
+                        {d.note && <div className="mt-1 text-slate-400">Note: {d.note}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Customer withdrawal history */}
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-2">Withdrawal History</h4>
+                {withdrawalRequests.filter((w) => w.userId === selectedUserForHistory.id).length === 0 ? <p className="text-xs text-slate-500">No withdrawal requests recorded.</p> : (
+                  <div className="space-y-2">
+                    {withdrawalRequests.filter((w) => w.userId === selectedUserForHistory.id).map((w) => (
+                      <div key={w.id} className="rounded-lg border border-[#263149] bg-[#151b2a] p-3 text-[10px] sm:text-xs">
+                        <div className="flex flex-wrap justify-between gap-2"><strong className="text-white">${w.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} · {w.status.toUpperCase()}</strong><span className="text-slate-500">{w.timestamp}</span></div>
+                        <div className="mt-1 break-words text-slate-400">{w.accountHolderName} · {w.withdrawalType || 'USD'}</div>
+                        <div className="mt-1 break-all font-mono text-slate-400">{w.bankOrAddress}</div>
+                        <div className="mt-1 text-slate-500">{w.network} · {w.sourceWallet || 'Wallet source not recorded'}</div>
+                        {w.rejectReason && <div className="mt-1 text-rose-300">Reason: {w.rejectReason}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Customer support history */}
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-2">Support History</h4>
+                {supportTickets.filter((t) => t.userId === selectedUserForHistory.id).length === 0 ? <p className="text-xs text-slate-500">No support sessions recorded.</p> : (
+                  <div className="space-y-2">
+                    {supportTickets.filter((t) => t.userId === selectedUserForHistory.id).map((ticket) => (
+                      <div key={ticket.id} className="rounded-lg border border-[#263149] bg-[#151b2a] p-3">
+                        <div className="flex flex-wrap justify-between gap-2 text-[10px]"><strong className="text-white">Session {ticket.sessionNumber || '—'} · {ticket.status}</strong><span className="text-slate-500">{ticket.lastMessageTime}</span></div>
+                        <div className="mt-1 text-[10px] text-slate-400">{ticket.messages.length} messages · {ticket.lastMessage || 'No message preview'}</div>
+                        <div className="mt-2 space-y-1 border-t border-[#263149] pt-2">
+                          {ticket.messages.map((message) => (
+                            <div key={message.id} className="text-[10px] text-slate-400">
+                              <span className={message.sender === 'admin' ? 'text-cyan-300' : 'text-emerald-300'}>{message.senderName}</span>
+                              <span className="text-slate-600"> · {message.timestamp}</span>
+                              <div className="break-words text-slate-300">{message.isDeleted ? 'Message deleted' : message.text || (message.attachmentName ? `Attachment: ${message.attachmentName}` : 'Attachment')}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Cloud-synced activity history */}
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-2">Admin Activity History</h4>
+                {auditLogs.filter((log) =>
+                  log.target.includes(selectedUserForHistory.uid) ||
+                  log.target.includes(selectedUserForHistory.id)
+                ).length === 0 ? (
+                  <p className="text-xs text-slate-500">No matching admin activity records are available.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {auditLogs.filter((log) =>
+                      log.target.includes(selectedUserForHistory.uid) ||
+                      log.target.includes(selectedUserForHistory.id)
+                    ).map((log) => (
+                      <div key={log.id} className="rounded-lg border border-[#263149] bg-[#151b2a] p-3 text-[10px] sm:text-xs">
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <strong className="text-cyan-300">{log.action}</strong>
+                          <span className="text-slate-500">{log.timestamp}</span>
+                        </div>
+                        <div className="mt-1 text-slate-300">{log.details}</div>
+                        <div className="mt-1 text-slate-500">By {log.adminName}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Balance Adjustments section */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">
-                  Balance Audit History
+                  Local Balance Adjustment History
                 </h4>
                 {balanceAdjustments.filter((b) => b.userId === selectedUserForHistory.id).length === 0 ? (
                   <p className="text-xs text-slate-500">No balance adjustments logged for this user.</p>
@@ -439,7 +543,7 @@ export const AdminUsersTab: React.FC = () => {
       {/* BALANCE ADJUSTMENT QUICK MODAL */}
       {adjustModalUser && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111522] border border-[#232c40] rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="bg-[#111522] border border-[#232c40] rounded-xl sm:rounded-2xl w-full max-w-md max-h-[92dvh] overflow-y-auto p-3 sm:p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#20283c] pb-3 mb-4">
               <h3 className="text-sm font-bold text-white">
                 Adjust Balance: <span className="text-cyan-400">{adjustModalUser.name}</span>

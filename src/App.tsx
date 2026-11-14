@@ -51,12 +51,12 @@ const AppContent: React.FC = () => {
   const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin' && activeTab !== 'agreement' && !isMaintenanceActive;
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-slate-100 flex flex-col font-sans">
+    <div className="app-shell min-h-screen bg-[#0b0e14] text-slate-100 flex flex-col font-sans">
       {/* Top Header - Rendered strictly for authenticated user tabs, NEVER on Login, Admin or Agreement */}
       {showHeader && <Header />}
 
       {/* Main Routed Content */}
-      <main className={activeTab === 'admin' ? 'flex-1 min-w-0 w-full overflow-x-hidden pb-0' : 'flex-1 min-w-0 w-full overflow-x-hidden pb-24 md:pb-12'}>
+      <main className={activeTab === 'admin' ? 'app-main admin-main flex-1 min-w-0 w-full overflow-x-hidden pb-0' : 'app-main flex-1 min-w-0 w-full overflow-x-hidden pb-24 md:pb-12'}>
         {/* If user navigates to Admin tab, always show Admin Panel */}
         {activeTab === 'admin' ? (
           <AdminPanel />
@@ -86,7 +86,7 @@ const AppContent: React.FC = () => {
       {isUserLoggedIn && activeTab !== 'admin' && activeTab !== 'login' && activeTab !== 'agreement' && !isMaintenanceActive && (
         <nav
           aria-label="Mobile Navigation"
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0c1017]/95 backdrop-blur-lg border-t border-[#1a2234] py-2 px-3 flex items-center justify-around select-none shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
+          className="mobile-bottom-nav md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0c1017]/95 backdrop-blur-lg border-t border-[#1a2234] py-2 px-3 flex items-center justify-around select-none shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
         >
           <button
             onClick={() => setActiveTab('home')}

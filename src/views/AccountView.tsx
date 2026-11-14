@@ -262,22 +262,22 @@ export const AccountView: React.FC = () => {
   const mainBalance = (currentUser.fundingBalance || 0) + (currentUser.tradingBalance || 0);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="account-view max-w-2xl mx-auto px-2.5 sm:px-6 py-2 sm:py-6 space-y-2 sm:space-y-6">
       {/* User Header Profile Card matching Screenshot 5 */}
-      <div className="bg-[#10141f] border border-[#1e2538] rounded-2xl p-6 shadow-xl space-y-4">
+      <div className="bg-[#10141f] border border-[#1e2538] rounded-2xl p-3 sm:p-6 shadow-xl space-y-2 sm:space-y-4">
         <div className="flex items-center gap-4">
           <div className="relative group shrink-0">
             {currentUser.avatar ? (
               <img
                 src={currentUser.avatar}
                 alt={currentUser.name}
-                className="w-16 h-16 rounded-full object-cover border-2 border-amber-400/60 shadow-lg shadow-amber-500/20"
+                className="w-11 h-11 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-amber-400/60 shadow-lg shadow-amber-500/20"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).style.display = 'none';
                 }}
               />
             ) : (
-              <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-500 via-amber-400 to-amber-200 text-black font-extrabold text-2xl flex items-center justify-center shadow-lg shadow-amber-500/25 ring-2 ring-amber-400/40">
+              <div className="w-11 h-11 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-amber-500 via-amber-400 to-amber-200 text-black font-extrabold text-2xl flex items-center justify-center shadow-lg shadow-amber-500/25 ring-2 ring-amber-400/40">
                 {currentUser.name.charAt(0).toUpperCase()}
               </div>
             )}
@@ -289,7 +289,7 @@ export const AccountView: React.FC = () => {
             ) : (
               <label
                 htmlFor="avatar-upload"
-                className="absolute -bottom-1 -right-1 bg-[#1a2336] hover:bg-[#25324d] text-amber-400 border border-amber-500/30 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer shadow-md transition-all active:scale-90"
+                className="absolute -bottom-1 -right-1 bg-[#1a2336] hover:bg-[#25324d] text-amber-400 border border-amber-500/30 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center cursor-pointer shadow-md transition-all active:scale-90"
                 title="Upload profile picture"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -305,13 +305,13 @@ export const AccountView: React.FC = () => {
             />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold text-white capitalize truncate">{currentUser.name}</h2>
+            <h2 className="text-sm sm:text-lg font-bold text-white capitalize truncate">{currentUser.name}</h2>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-slate-400">UID:</span>
               <span className="font-mono text-xs font-bold text-amber-400">{currentUser.uid}</span>
               <span className="text-[11px] text-slate-400">- Main Account</span>
             </div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="hidden sm:flex items-center gap-2 mt-1">
               <label
                 htmlFor="avatar-upload"
                 className="inline-flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
@@ -338,12 +338,12 @@ export const AccountView: React.FC = () => {
         </div>
 
         {/* Main Balance Row matching Screenshot 5 */}
-        <div className="pt-3 border-t border-[#1b2234]">
+        <div className="pt-2 sm:pt-3 border-t border-[#1b2234]">
           <span className="text-xs text-slate-400 block font-medium">Main Balance</span>
-          <div className="text-2xl sm:text-3xl font-extrabold font-mono text-white mt-0.5 tracking-tight">
+          <div className="text-xl sm:text-3xl font-extrabold font-mono text-white mt-0.5 tracking-tight">
             ${mainBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <div className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-2">
+          <div className="text-[10px] sm:text-xs text-slate-400 font-mono mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span>Funding: ${(currentUser.fundingBalance || 0).toFixed(2)}</span>
             <span className="text-slate-600">·</span>
             <span>Trading: ${(currentUser.tradingBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -351,7 +351,7 @@ export const AccountView: React.FC = () => {
         </div>
 
         {/* Quick Mobile-Friendly Wallet Actions */}
-        <div className="pt-2 grid grid-cols-3 gap-2">
+        <div className="hidden sm:grid pt-2 grid-cols-3 gap-2">
           <button
             onClick={() => setIsDepositModalOpen(true)}
             className="bg-[#161c2a] hover:bg-[#1e2638] text-emerald-400 border border-emerald-500/20 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
@@ -378,12 +378,12 @@ export const AccountView: React.FC = () => {
 
       {/* SUBVIEW: MAIN MENU matching Screenshot 5 */}
       {activeSubView === 'menu' && (
-        <div className="space-y-6">
-          <div className="bg-[#10141f] border border-[#1e2538] rounded-2xl divide-y divide-[#181f30] overflow-hidden shadow-xl">
+        <div className="account-menu-section space-y-2 sm:space-y-6">
+          <div className="account-menu-list bg-[#10141f] border border-[#1e2538] rounded-2xl divide-y divide-[#181f30] overflow-hidden shadow-xl">
             {/* 1. Personal Info & Avatar */}
             <button
               onClick={() => setActiveSubView('personalInfo')}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -399,7 +399,7 @@ export const AccountView: React.FC = () => {
             {/* 2. Deposit */}
             <button
               onClick={() => setIsDepositModalOpen(true)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -415,7 +415,7 @@ export const AccountView: React.FC = () => {
             {/* 3. Withdraw */}
             <button
               onClick={() => setActiveSubView('withdraw')}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -431,7 +431,7 @@ export const AccountView: React.FC = () => {
             {/* 4. Transfer */}
             <button
               onClick={() => setIsTransferModalOpen(true)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -452,7 +452,7 @@ export const AccountView: React.FC = () => {
             {/* 5. Invite Friends (pointed by user screenshot) */}
             <button
               onClick={() => setActiveSubView('invite')}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -478,7 +478,7 @@ export const AccountView: React.FC = () => {
                   window.history.pushState({}, '', '/agreement');
                 }
               }}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center relative group-hover:scale-105 transition-transform">
@@ -508,7 +508,7 @@ export const AccountView: React.FC = () => {
             {/* 6. Security */}
             <button
               onClick={() => setActiveSubView('security')}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -524,7 +524,7 @@ export const AccountView: React.FC = () => {
             {/* 7. Announcements */}
             <button
               onClick={() => setActiveSubView('announcements')}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -540,7 +540,7 @@ export const AccountView: React.FC = () => {
             {/* 8. Customer Support */}
             <button
               onClick={() => setIsSupportOpen(true)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
+              className="w-full px-3 sm:px-5 py-2 sm:py-4 flex items-center justify-between hover:bg-[#151a28] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -557,7 +557,7 @@ export const AccountView: React.FC = () => {
           {/* Logout Button matching Screenshot 5 */}
           <button
             onClick={handleLogout}
-            className="w-full bg-[#f43f5e] hover:bg-[#e11d48] text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-rose-500/20 active:scale-[0.99] cursor-pointer text-center"
+            className="w-full bg-[#f43f5e] hover:bg-[#e11d48] text-white font-bold py-2.5 sm:py-3.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-rose-500/20 active:scale-[0.99] cursor-pointer text-center"
           >
             Logout
           </button>

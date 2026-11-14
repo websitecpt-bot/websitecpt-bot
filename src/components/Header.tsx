@@ -40,7 +40,7 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 bg-[#0d111a] border-b border-[#1f2637] select-none">
       {/* Top Ticker Ribbon with high-contrast, razor-sharp anti-blur marquee of top cryptocurrencies */}
-      <div className="bg-[#070a10] border-b border-[#161c2b] py-1 overflow-hidden select-none relative">
+      <div className="bg-[#070a10] border-b border-[#161c2b] py-1 sm:py-1.5 overflow-hidden select-none relative">
         <div
           className="animate-ticker-marquee flex items-center gap-5 sm:gap-8 text-[10px] sm:text-xs text-white"
           style={{
@@ -125,7 +125,7 @@ export const Header: React.FC = () => {
             onClick={() => setActiveTab('home')}
             className="cursor-pointer group"
           >
-            <CptLogo size={28} showText={true} />
+            <CptLogo size={32} showText={true} className="header-brand-logo" />
           </div>
 
           {/* Nav Links (Desktop) */}

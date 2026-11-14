@@ -118,9 +118,9 @@ export const Header: React.FC = () => {
       </div>
 
       {/* Main Navigation Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 min-h-14 sm:h-16 py-1 flex items-center justify-between gap-2">
         {/* Brand Logo */}
-        <div className="flex items-center gap-8">
+        <div className="min-w-0 flex items-center gap-2 sm:gap-8">
           <div
             onClick={() => setActiveTab('home')}
             className="cursor-pointer group"
@@ -184,7 +184,7 @@ export const Header: React.FC = () => {
         </div>
 
         {/* Right side controls: Live Support, Language, and Customer UID Badge */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           {/* Live Support Trigger with badge */}
           <button
             onClick={() => setIsSupportOpen(true)}
@@ -265,11 +265,11 @@ export const Header: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('account')}
-            className="flex items-center gap-1.5 bg-[#141925] hover:bg-[#1c2333] border border-[#232c40] px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer group"
+            className="min-w-0 flex shrink-0 items-center gap-1 bg-[#141925] hover:bg-[#1c2333] border border-[#232c40] px-2 py-1.5 rounded-lg text-[10px] sm:text-xs transition-all cursor-pointer group"
             title="My Account"
           >
-            <span className="text-slate-400 text-[11px]">UID:</span>
-            <span className="font-mono font-bold text-amber-400 group-hover:text-amber-300">
+            <span className="hidden sm:inline text-slate-400 text-[11px]">UID:</span>
+            <span className="max-w-[3.25rem] sm:max-w-none truncate font-mono font-bold text-amber-400 group-hover:text-amber-300">
               {currentUser.uid}
             </span>
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Online"></span>

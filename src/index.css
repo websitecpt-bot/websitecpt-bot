@@ -370,3 +370,81 @@ textarea {
     font-size: 8px;
   }
 }
+
+
+/* Preserve the existing site design while scaling typography and spacing down on phones. */
+@media (max-width: 767px) {
+  html {
+    font-size: 14px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  .app-shell {
+    min-height: 100svh;
+    min-height: 100dvh;
+    overflow-x: clip;
+  }
+
+  .app-shell main {
+    min-width: 0;
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-shell .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: 0.9rem;
+  }
+
+  .app-shell .space-y-5 > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: 0.8rem;
+  }
+
+  .app-shell .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: 0.7rem;
+  }
+
+  .app-shell .space-y-3 > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: 0.55rem;
+  }
+
+  .app-shell .space-y-2 > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: 0.4rem;
+  }
+
+  .app-shell section,
+  .app-shell article,
+  .app-shell table {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-shell .overflow-x-auto {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .app-shell input,
+  .app-shell select,
+  .app-shell textarea {
+    font-size: 16px;
+  }
+
+  .mobile-bottom-nav {
+    padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 374px) {
+  html {
+    font-size: 13px;
+  }
+
+  .app-shell main {
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-bottom-nav button {
+    padding-inline: 0.55rem;
+  }
+}

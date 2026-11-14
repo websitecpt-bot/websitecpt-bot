@@ -142,7 +142,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
       {/* Users Table */}
       <div className="bg-[#121622] border border-[#21293c] rounded-xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="admin-customer-table w-full text-left text-xs">
             <thead className="bg-[#161c2b] border-b border-[#21293c] text-slate-400 font-semibold uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-3">Trader</th>

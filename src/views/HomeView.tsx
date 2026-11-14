@@ -40,10 +40,10 @@ export const HomeView: React.FC = () => {
   const totalAssets = currentUser.fundingBalance + equity;
 
   return (
-    <div className="w-full max-w-6xl min-w-0 mx-auto px-3 sm:px-6 py-3 sm:py-6 space-y-4 sm:space-y-6">
+    <div className="home-view w-full max-w-6xl min-w-0 mx-auto px-2.5 sm:px-6 py-2 sm:py-6 space-y-3 sm:space-y-6">
       {/* Welcome & Banner */}
-      <div className="space-y-3">
-        <h1 className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-lg sm:text-2xl leading-tight font-bold text-slate-100">
+      <div className="space-y-2 sm:space-y-3">
+        <h1 className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-base sm:text-2xl leading-tight font-bold text-slate-100">
           <span>{t.welcome},</span>
           <span className="min-w-0 max-w-full text-amber-400 capitalize break-words">{currentUser.name}</span>
           <span className="shrink-0 whitespace-nowrap text-[10px] sm:text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-medium">
@@ -52,14 +52,14 @@ export const HomeView: React.FC = () => {
         </h1>
 
         {/* CPT Markets banner matching user specification */}
-        <div className="min-w-0 bg-gradient-to-r from-[#111927] via-[#142033] to-[#0f1724] border border-[#212f47] rounded-xl p-3 sm:p-5 flex items-center justify-between">
+        <div className="min-w-0 bg-gradient-to-r from-[#111927] via-[#142033] to-[#0f1724] border border-[#212f47] rounded-xl p-2.5 sm:p-5 flex items-center justify-between">
           <div className="min-w-0 flex items-center gap-3">
             <CptLogo size={34} />
             <div>
-              <h2 className="min-w-0 text-sm sm:text-lg leading-snug font-extrabold text-white tracking-wide break-words">
+              <h2 className="min-w-0 text-xs sm:text-lg leading-snug font-extrabold text-white tracking-wide break-words">
                 {t.tradingAcrossCountries}
               </h2>
-              <p className="text-xs text-slate-400 font-medium mt-0.5">
+              <p className="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">
                 {t.globalTradingExp}
               </p>
             </div>
@@ -72,7 +72,7 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* Total Assets & Balance Card */}
-      <div className="bg-[#121620] border border-[#22293b] rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden">
+      <div className="home-balance-card bg-[#121620] border border-[#22293b] rounded-2xl p-3 sm:p-6 shadow-xl relative overflow-hidden">
         <div className="flex items-center justify-between">
           <span className="text-xs sm:text-sm font-medium text-slate-400">{t.totalAssets}</span>
           <button
@@ -85,30 +85,30 @@ export const HomeView: React.FC = () => {
         </div>
 
         {/* Big Balance Number */}
-        <div className="mt-2 text-3xl sm:text-4xl font-extrabold font-mono tracking-tight text-white">
+        <div className="mt-1.5 sm:mt-2 text-2xl sm:text-4xl font-extrabold font-mono tracking-tight text-white">
           {showBalance
             ? `$${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             : '••••••••••'}
         </div>
 
         {/* Sub-balances breakdown matching Screenshot 2 */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-[#1e2536] text-xs">
+        <div className="home-balance-breakdown grid grid-cols-4 gap-1.5 sm:gap-4 mt-3 sm:mt-6 pt-3 sm:pt-5 border-t border-[#1e2536] text-[9px] sm:text-xs">
           <div>
-            <span className="text-slate-400 block">{t.fundingWallet}</span>
-            <span className="font-mono font-semibold text-slate-200 mt-0.5 block">
+            <span className="text-[9px] sm:text-xs text-slate-400 block leading-tight">{t.fundingWallet}</span>
+            <span className="font-mono text-[10px] sm:text-xs font-semibold text-slate-200 mt-0.5 block whitespace-nowrap">
               {showBalance ? `$${currentUser.fundingBalance.toFixed(2)}` : '••••'}
             </span>
           </div>
           <div>
-            <span className="text-slate-400 block">{t.tradingWallet}</span>
-            <span className="font-mono font-semibold text-amber-400 mt-0.5 block">
+            <span className="text-[9px] sm:text-xs text-slate-400 block leading-tight">{t.tradingWallet}</span>
+            <span className="font-mono text-[10px] sm:text-xs font-semibold text-amber-400 mt-0.5 block whitespace-nowrap">
               {showBalance ? `$${currentUser.tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '••••'}
             </span>
           </div>
           <div>
-            <span className="text-slate-400 block">Floating P/L</span>
+            <span className="text-[9px] sm:text-xs text-slate-400 block leading-tight">Floating P/L</span>
             <span
-              className={`font-mono font-semibold mt-0.5 block ${
+              className={`font-mono text-[10px] sm:text-xs font-semibold mt-0.5 block whitespace-nowrap ${
                 floatingPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'
               }`}
             >
@@ -118,24 +118,24 @@ export const HomeView: React.FC = () => {
             </span>
           </div>
           <div>
-            <span className="text-slate-400 block">Equity</span>
-            <span className="font-mono font-semibold text-slate-100 mt-0.5 block">
+            <span className="text-[9px] sm:text-xs text-slate-400 block leading-tight">Equity</span>
+            <span className="font-mono text-[10px] sm:text-xs font-semibold text-slate-100 mt-0.5 block whitespace-nowrap">
               {showBalance ? `$${equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '••••'}
             </span>
           </div>
         </div>
 
         {/* Trade & Deposit Action Buttons matching screenshot */}
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 mt-4 sm:mt-6">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 mt-3 sm:mt-6">
           <button
             onClick={() => setActiveTab('trade')}
-            className="w-full bg-[#f4b41a] hover:bg-[#e0a416] text-black font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-amber-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full bg-[#f4b41a] hover:bg-[#e0a416] text-black font-bold py-2 sm:py-3 px-3 sm:px-4 rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-amber-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>{t.trade}</span>
           </button>
           <button
             onClick={() => setIsDepositModalOpen(true)}
-            className="w-full bg-[#202636] hover:bg-[#283042] text-slate-200 font-bold py-3 px-4 rounded-xl text-sm transition-all border border-[#2d374d] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full bg-[#202636] hover:bg-[#283042] text-slate-200 font-bold py-2 sm:py-3 px-3 sm:px-4 rounded-xl text-xs sm:text-sm transition-all border border-[#2d374d] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>{t.deposit}</span>
           </button>
@@ -143,38 +143,38 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* 4 Feature Action Cards matching screenshot */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+      <div className="home-shortcuts grid grid-cols-4 gap-1.5 sm:gap-4">
         {/* Support */}
         <button
           onClick={() => setIsSupportOpen(true)}
-          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-3 sm:p-4 flex flex-col items-center justify-center gap-2 text-center transition-all group cursor-pointer"
+          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-2 sm:p-4 flex flex-col items-center justify-center gap-1.5 sm:gap-2 text-center transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Headphones className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-amber-400">{t.liveSupport}</span>
+          <span className="text-[10px] sm:text-xs font-semibold text-slate-300 group-hover:text-amber-400">{t.liveSupport}</span>
         </button>
 
         {/* Transfer */}
         <button
           onClick={() => setIsTransferModalOpen(true)}
-          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-3 sm:p-4 flex flex-col items-center justify-center gap-2 text-center transition-all group cursor-pointer"
+          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-2 sm:p-4 flex flex-col items-center justify-center gap-1.5 sm:gap-2 text-center transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <ArrowLeftRight className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-blue-400">{t.transfer}</span>
+          <span className="text-[10px] sm:text-xs font-semibold text-slate-300 group-hover:text-blue-400">{t.transfer}</span>
         </button>
 
         {/* History */}
         <button
           onClick={() => setActiveTab('history')}
-          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-3 sm:p-4 flex flex-col items-center justify-center gap-2 text-center transition-all group cursor-pointer"
+          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-2 sm:p-4 flex flex-col items-center justify-center gap-1.5 sm:gap-2 text-center transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <History className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-emerald-400">{t.history}</span>
+          <span className="text-[10px] sm:text-xs font-semibold text-slate-300 group-hover:text-emerald-400">{t.history}</span>
         </button>
 
         {/* Refer */}
@@ -182,17 +182,17 @@ export const HomeView: React.FC = () => {
           onClick={() => {
             setActiveTab('account');
           }}
-          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-3 sm:p-4 flex flex-col items-center justify-center gap-2 text-center transition-all group cursor-pointer"
+          className="bg-[#121620] hover:bg-[#191f2d] border border-[#202738] rounded-xl p-2 sm:p-4 flex flex-col items-center justify-center gap-1.5 sm:gap-2 text-center transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Users className="w-5 h-5" />
           </div>
-          <span className="text-xs font-semibold text-slate-300 group-hover:text-purple-400">Refer</span>
+          <span className="text-[10px] sm:text-xs font-semibold text-slate-300 group-hover:text-purple-400">Refer</span>
         </button>
       </div>
 
       {/* CPT MARKETS TRADING TABLE SECTION matching screenshot */}
-      <div className="space-y-4">
+      <div className="hidden md:block space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -214,19 +214,22 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* QUICK PAIRS CARDS */}
-      <div className="space-y-3 pt-2">
+      <div className="home-hot-markets space-y-2 sm:space-y-3 pt-0 sm:pt-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Flame className="w-4 h-4 text-amber-500" />
-            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300">
+            <h3 className="text-[11px] sm:text-sm font-bold uppercase tracking-wider text-slate-300">
               Hot Crypto & FX Pairs
             </h3>
           </div>
-          <span className="text-xs text-slate-400">Up to 1000x Margin</span>
+          <>
+            <span className="hidden sm:inline text-xs text-slate-400">Up to 1000x Margin</span>
+            <button onClick={() => setActiveTab('market')} className="md:hidden text-[10px] font-semibold text-amber-400">View all</button>
+          </>
         </div>
 
         {/* Coin Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="home-quick-grid grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
           {coins.slice(0, 10).map((coin) => {
             const isPos = coin.change24h >= 0;
             return (
@@ -236,7 +239,7 @@ export const HomeView: React.FC = () => {
                   setSelectedSymbol(coin.symbol);
                   setActiveTab('trade');
                 }}
-                className="bg-[#121620] hover:bg-[#181e2b] border border-[#202738] hover:border-[#333e59] rounded-xl p-3.5 cursor-pointer transition-all hover:-translate-y-0.5 group"
+                className="quick-pair-card bg-[#121620] hover:bg-[#181e2b] border border-[#202738] hover:border-[#333e59] rounded-xl p-2 sm:p-3.5 cursor-pointer transition-all hover:-translate-y-0.5 group"
               >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-200 group-hover:text-amber-400 transition-colors">
@@ -251,10 +254,10 @@ export const HomeView: React.FC = () => {
                     {coin.change24h.toFixed(2)}%
                   </span>
                 </div>
-                <div className="mt-2 font-mono font-bold text-sm sm:text-base text-white">
+                <div className="mt-1 sm:mt-2 font-mono font-bold text-xs sm:text-base text-white">
                   ${coin.price.toLocaleString(undefined, { minimumFractionDigits: coin.price > 100 ? 2 : 4 })}
                 </div>
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                <div className="mt-1 sm:mt-2 flex items-center justify-between text-[9px] sm:text-[11px] text-slate-400">
                   <span>Lev. {coin.maxLeverage}x</span>
                   <span className="text-amber-400/80 group-hover:text-amber-400 flex items-center">
                     Trade <ArrowUpRight className="w-3 h-3 ml-0.5" />

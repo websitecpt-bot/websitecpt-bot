@@ -152,7 +152,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ onSymbolSelect }) =>
       {/* 1. TOP TOOLBAR matching image_d65f5227.png */}
       <div className="bg-[#10141f] border-b border-[#1b2233] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         {/* Left: Title & Controls */}
-        <div className="min-w-0 flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-1.5 text-slate-200 font-bold text-xs sm:text-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>Live Candlestick Chart</span>
@@ -161,7 +161,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ onSymbolSelect }) =>
           <div className="h-4 w-px bg-slate-700/60 mx-1 hidden sm:block" />
 
           {/* Timeframe intervals matching screenshot */}
-          <div className="max-w-full flex items-center gap-1 overflow-x-auto scrollbar-none bg-[#090c13] p-0.5 rounded-lg border border-[#1c2336] text-[11px]">
+          <div className="flex items-center gap-1 bg-[#090c13] p-0.5 rounded-lg border border-[#1c2336] text-[11px]">
             {(['1m', '5m', '15m', '30m', '1h', '4h', '1D'] as const).map((tf) => (
               <button
                 key={tf}
@@ -257,15 +257,15 @@ export const TradingChart: React.FC<TradingChartProps> = ({ onSymbolSelect }) =>
 
       {/* 2. OHLC STATS STRIP matching screenshot: O: ... H: ... L: ... C: ... */}
       <div className="bg-[#0e121b] border-b border-[#171e2c] px-4 py-2 flex flex-wrap items-center justify-between text-[11px] font-mono gap-3">
-        <div className="min-w-0 flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="min-w-0 flex items-center gap-1.5">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
             <OfficialCoinIcon symbol={selectedSymbol} size={16} />
-            <span className="min-w-0 font-bold text-white tracking-wide break-words">
+            <span className="font-bold text-white tracking-wide">
               {getCoinFullName(selectedSymbol)} / TetherUS · {timeframe} · Binance
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-300">
+          <div className="flex items-center gap-2 text-slate-300">
             <span>O <span className="text-white">{activeDisplay.open.toLocaleString()}</span></span>
             <span>H <span className="text-white">{activeDisplay.high.toLocaleString()}</span></span>
             <span>L <span className="text-white">{activeDisplay.low.toLocaleString()}</span></span>
@@ -276,7 +276,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ onSymbolSelect }) =>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-400 text-[10px]">
+        <div className="flex items-center gap-3 text-slate-400 text-[10px]">
           <span>Vol · {selectedSymbol.slice(0, 3)}: <span className="text-amber-400 font-semibold">{activeDisplay.volume}</span></span>
           <span className="text-slate-500">Live 1s Tick</span>
         </div>
@@ -509,18 +509,18 @@ export const TradingChart: React.FC<TradingChartProps> = ({ onSymbolSelect }) =>
       </div>
 
       {/* 4. BOTTOM TIMEFRAME STRIP */}
-      <div className="bg-[#0e121b] border-t border-[#171e2c] px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-slate-400 font-mono">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-          <span className="hidden sm:inline">06:00</span>
-          <span className="hidden sm:inline">09:00</span>
-          <span className="hidden sm:inline">12:00</span>
-          <span className="hidden sm:inline">15:00</span>
-          <span className="hidden sm:inline">18:00</span>
-          <span className="hidden sm:inline">21:00</span>
+      <div className="bg-[#0e121b] border-t border-[#171e2c] px-4 py-2 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+        <div className="flex items-center gap-4">
+          <span>06:00</span>
+          <span>09:00</span>
+          <span>12:00</span>
+          <span>15:00</span>
+          <span>18:00</span>
+          <span>21:00</span>
           <span className="text-amber-400 font-bold">NOW</span>
         </div>
         <div className="flex items-center gap-2 text-slate-400">
-          <span className="hidden sm:inline">Time Zone: UTC+0</span>
+          <span>Time Zone: UTC+0</span>
           <span className="text-emerald-400">● Live Connection</span>
         </div>
       </div>

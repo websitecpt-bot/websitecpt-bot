@@ -695,3 +695,132 @@ textarea {
     display: none;
   }
 }
+
+
+/* Withdrawal management: readable columns, complete recipient details, and phone cards. */
+.admin-portal main .admin-withdrawal-table {
+  width: 100%;
+  min-width: 1100px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-portal main .admin-withdrawal-table th,
+.admin-portal main .admin-withdrawal-table td {
+  vertical-align: top;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.admin-portal main .admin-withdrawal-table th {
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.035em;
+}
+
+.admin-portal main .admin-withdrawal-table .admin-withdrawal-status,
+.admin-portal main .admin-withdrawal-table .admin-withdrawal-action,
+.admin-portal main .admin-withdrawal-table .admin-withdrawal-actions,
+.admin-portal main .admin-withdrawal-table .admin-withdrawal-action span {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  flex-shrink: 0;
+}
+
+.admin-portal main .admin-withdrawal-table .admin-withdrawal-actions {
+  min-width: 170px;
+}
+
+@media (max-width: 767px) {
+  .admin-portal main .admin-withdrawal-table,
+  .admin-portal main .admin-withdrawal-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .admin-portal main .admin-withdrawal-table thead {
+    display: none;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody tr:not(.admin-withdrawal-empty) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 9px;
+    border-bottom: 1px solid #273248;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody td:not(.admin-withdrawal-empty td) {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 7px;
+    border: 1px solid #273149;
+    border-radius: 7px;
+    background: #151c2a;
+    font-size: 10px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 76px;
+    color: #7f8da6;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    overflow-wrap: normal;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody td:nth-child(1),
+  .admin-portal main .admin-withdrawal-table tbody td:nth-child(4),
+  .admin-portal main .admin-withdrawal-table tbody td:nth-child(7) {
+    grid-column: 1 / -1;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody td:nth-child(4) > div {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .admin-portal main .admin-withdrawal-table .admin-withdrawal-actions {
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .admin-portal main .admin-withdrawal-table .admin-withdrawal-action {
+    padding-inline: 9px;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody tr.admin-withdrawal-empty {
+    display: block;
+    padding: 12px;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody tr.admin-withdrawal-empty td {
+    display: block;
+    border: 0;
+    background: transparent;
+    padding: 20px 8px;
+  }
+
+  .admin-portal main .admin-withdrawal-table tbody tr.admin-withdrawal-empty td::before {
+    display: none;
+  }
+}
+
+@media (max-width: 374px) {
+  .admin-portal main .admin-withdrawal-table tbody td[data-label]::before {
+    flex-basis: 66px;
+    font-size: 7px;
+  }
+}

@@ -437,3 +437,11 @@ body {
     padding: 0.3rem 0.6rem;
   }
 }
+
+
+@media (max-width: 767px) {
+  .app-shell header .header-brand-logo > div:first-child {
+    width: 28px !important;
+    height: 28px !important;
+  }
+}

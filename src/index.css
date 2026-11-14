@@ -448,3 +448,10 @@ textarea {
     padding-inline: 0.55rem;
   }
 }
+
+
+@media (max-width: 767px) {
+  .app-shell main.admin-main {
+    padding-bottom: 0.5rem;
+  }
+}

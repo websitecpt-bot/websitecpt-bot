@@ -43,10 +43,10 @@ export const CptLogo: React.FC<CptLogoProps> = ({ size = 36, className = '', sho
       </div>
 
       {showText && (
-        <div className="brand-wordmark flex items-baseline tracking-tight font-sans">
-          <span className="font-extrabold text-lg sm:text-xl text-white">CPT</span>
-          <span className="font-extrabold text-lg sm:text-xl text-amber-400 ml-1 sm:ml-1.5">Markets</span>
-          <span className="ml-1.5 hidden min-[390px]:inline-flex sm:ml-2 items-center gap-0.5 px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-[9px] font-bold text-amber-400 uppercase tracking-tighter">
+        <div className="flex items-baseline tracking-tight font-sans">
+          <span className="font-extrabold text-xl text-white">CPT</span>
+          <span className="font-extrabold text-xl text-amber-400 ml-1.5">Markets</span>
+          <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-[9px] font-bold text-amber-400 uppercase tracking-tighter">
             ★ 18 YRS
           </span>
         </div>

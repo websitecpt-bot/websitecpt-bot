@@ -173,7 +173,7 @@ export const AdminWithdrawalsTab: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-[#1b2234]">
               {filteredWithdrawals.length === 0 ? (
-                <tr>
+                <tr className="admin-withdrawal-empty">
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     No withdrawal requests found in this view.
                   </td>

@@ -78,9 +78,11 @@ export const AdminPanel: React.FC = () => {
   const isRecentCustomer = (user: (typeof users)[number]) => {
     if (!user.createdAt) return false;
     const raw = user.createdAt.trim();
-    const normalized = raw.includes('T') || /Z$|[+-]\\d{2}:?\\d{2}$/.test(raw)
+    const normalized = raw.includes('T')
       ? raw
-      : `${raw.replace(' ', 'T')}Z`;
+      : raw.length === 10
+        ? `${raw}T00:00:00Z`
+        : `${raw.replace(' ', 'T')}Z`;
     const createdAt = Date.parse(normalized);
     const now = Date.now();
     return Number.isFinite(createdAt) && createdAt <= now + 5 * 60 * 1000 && createdAt >= now - 48 * 60 * 60 * 1000;

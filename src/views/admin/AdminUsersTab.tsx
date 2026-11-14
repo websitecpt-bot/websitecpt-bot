@@ -107,7 +107,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
               <span>{segment === 'new' ? 'New User Accounts' : 'Existing Customers'} ({filteredUsers.length})</span>
-              {newTradersCount > 0 && (
+              {segment === 'new' && newTradersCount > 0 && (
                 <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full animate-pulse">
                   {newTradersCount} NEW
                 </span>
@@ -502,7 +502,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
               {/* Balance Adjustments section */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">
-                  Balance Audit History
+                  Local Balance Adjustment History
                 </h4>
                 {balanceAdjustments.filter((b) => b.userId === selectedUserForHistory.id).length === 0 ? (
                   <p className="text-xs text-slate-500">No balance adjustments logged for this user.</p>

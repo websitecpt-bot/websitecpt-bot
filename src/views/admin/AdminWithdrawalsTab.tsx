@@ -321,7 +321,7 @@ export const AdminWithdrawalsTab: React.FC = () => {
                 </div>
                 <div className="rounded-lg border border-[#263149] bg-[#171f2e] p-3">
                   <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Source Wallet</div>
-                  <div className="mt-1 text-xs font-bold capitalize text-white">{request.sourceWallet || 'funding'}</div>
+                  <div className="mt-1 text-xs font-bold capitalize text-white">{request.sourceWallet || 'Not recorded on this older request'}</div>
                 </div>
                 <div className="rounded-lg border border-[#263149] bg-[#171f2e] p-3">
                   <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Status</div>

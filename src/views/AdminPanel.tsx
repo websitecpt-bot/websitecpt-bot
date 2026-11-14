@@ -31,6 +31,7 @@ import {
   Key,
   RefreshCw,
   Radio,
+  UserPlus,
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { AdminLiveTradingTab } from './admin/AdminLiveTradingTab';
@@ -73,6 +74,19 @@ export const AdminPanel: React.FC = () => {
   const pendingDeposits = depositRequests.filter((d) => d.status === 'pending').length;
   const pendingWithdrawals = withdrawalRequests.filter((w) => w.status === 'pending').length;
   const activeTradesCount = trades.filter((t) => t.status === 'OPEN').length;
+  const customerAccounts = users.filter((user) => !user.role || user.role === 'user');
+  const isRecentCustomer = (user: (typeof users)[number]) => {
+    if (!user.createdAt) return false;
+    const raw = user.createdAt.trim();
+    const normalized = raw.includes('T') || /Z$|[+-]\\d{2}:?\\d{2}$/.test(raw)
+      ? raw
+      : `${raw.replace(' ', 'T')}Z`;
+    const createdAt = Date.parse(normalized);
+    const now = Date.now();
+    return Number.isFinite(createdAt) && createdAt <= now + 5 * 60 * 1000 && createdAt >= now - 48 * 60 * 60 * 1000;
+  };
+  const newCustomerCount = customerAccounts.filter(isRecentCustomer).length;
+  const existingCustomerCount = customerAccounts.length - newCustomerCount;
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,6 +202,22 @@ export const AdminPanel: React.FC = () => {
       description: 'Metrics & Live Overview',
       icon: LayoutDashboard,
       badge: 0,
+    },
+    {
+      id: 'new-users',
+      label: 'New User Accounts',
+      description: 'Registered within 48 hours',
+      icon: UserPlus,
+      badge: newCustomerCount,
+      badgeColor: 'bg-emerald-500 text-black',
+    },
+    {
+      id: 'existing-users',
+      label: 'Existing Customers',
+      description: 'Customer profiles & history',
+      icon: Users,
+      badge: existingCustomerCount,
+      badgeColor: 'bg-cyan-400 text-black',
     },
     {
       id: 'support',
@@ -327,7 +357,7 @@ export const AdminPanel: React.FC = () => {
         )}
         {/* Sidebar Navigation */}
         <aside
-          className={`fixed md:static inset-y-0 left-0 z-40 w-[min(84vw,18rem)] md:w-64 max-h-[100dvh] overflow-y-auto overscroll-contain bg-[#10141f] md:bg-transparent border-r md:border-r-0 border-[#1e2538] p-4 md:p-0 flex flex-col justify-between shrink-0 transition-transform ${
+          className={`admin-sidebar fixed md:static inset-y-0 left-0 z-40 w-[min(84vw,18rem)] md:w-64 max-h-[100dvh] overflow-y-auto overscroll-contain bg-[#10141f] md:bg-transparent border-r md:border-r-0 border-[#1e2538] p-3 sm:p-4 md:p-0 flex flex-col justify-between shrink-0 transition-transform ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
           }`}
         >
@@ -346,7 +376,7 @@ export const AdminPanel: React.FC = () => {
                     setActiveAdminSubTab(item.id);
                     setSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left transition-all cursor-pointer ${
+                  className={`admin-nav-item w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all cursor-pointer ${
                     isActive
                       ? 'bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-950 font-extrabold shadow-lg shadow-cyan-500/25'
                       : 'text-slate-300 hover:bg-[#121c2e] hover:text-cyan-300 border border-transparent'
@@ -395,7 +425,9 @@ export const AdminPanel: React.FC = () => {
           {activeAdminSubTab === 'dashboard' && (
             <AdminDashboardTab onNavigate={(tab) => setActiveAdminSubTab(tab)} />
           )}
-          {activeAdminSubTab === 'users' && <AdminUsersTab />}
+          {activeAdminSubTab === 'new-users' && <AdminUsersTab segment="new" />}
+          {activeAdminSubTab === 'existing-users' && <AdminUsersTab segment="existing" />}
+          {activeAdminSubTab === 'users' && <AdminUsersTab segment="existing" />}
           {activeAdminSubTab === 'support' && <AdminSupportTab />}
           {activeAdminSubTab === 'balance' && <AdminBalanceTab />}
           {activeAdminSubTab === 'markets' && <AdminMarketsTab />}

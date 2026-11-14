@@ -669,6 +669,7 @@ export interface RealtimeHandlers {
   onTicketUpdate?: () => void;
   onDepositUpdate?: () => void;
   onWithdrawalUpdate?: () => void;
+  onAuditLogUpdate?: () => void;
 }
 
 export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): RealtimeChannel | null => {
@@ -703,6 +704,9 @@ export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): Realtim
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => {
         handlers.onWithdrawalUpdate?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, () => {
+        handlers.onAuditLogUpdate?.();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {

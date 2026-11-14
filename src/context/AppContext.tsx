@@ -47,6 +47,7 @@ import {
   syncWithdrawalToSupabase,
   updateWithdrawalStatusInSupabase,
   syncAuditLogToSupabase,
+  deleteSupportTicketFromSupabase,
   subscribeToSupabaseRealtime,
   supabaseAuthSignUp,
   supabaseAuthSignIn,
@@ -1586,8 +1587,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteSupportTicket = (ticketId: string) => {
-    const targetTicket = supportTickets.find((t) => t.id === ticketId);
-    setSupportTickets((prev) => prev.filter((t) => t.id !== ticketId));
+    const targetTicket = supportTickets.find((ticket) => ticket.id === ticketId);
+    setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
+    if (isSupabaseConfigured()) {
+      void deleteSupportTicketFromSupabase(ticketId).then((result) => {
+        if (!result.success) console.error('[Support] Ticket deletion was not saved:', result.error);
+      });
+    }
     logAuditAction(
       'SUPPORT_TICKET_DELETED',
       targetTicket ? `${targetTicket.userName} (#${targetTicket.id.slice(-6)})` : ticketId,
@@ -1754,11 +1760,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const markUserChatAsRead = () => {
+    const unreadTickets = supportTickets.filter(
+      (ticket) => ticket.userId === currentUser.id && ticket.unreadUserCount > 0
+    );
     setSupportTickets((prev) =>
-      prev.map((t) =>
-        t.userId === currentUser.id ? { ...t, unreadUserCount: 0 } : t
+      prev.map((ticket) =>
+        ticket.userId === currentUser.id ? { ...ticket, unreadUserCount: 0 } : ticket
       )
     );
+    if (isSupabaseConfigured()) {
+      unreadTickets.forEach((ticket) => {
+        void syncTicketToSupabase({ ...ticket, unreadUserCount: 0 }).then((result) => {
+          if (!result.success) console.error('[Support] Read status was not saved:', result.error);
+        });
+      });
+    }
   };
 
   const setUserViewingSupport = (userId: string, isViewing: boolean) => {
@@ -1915,7 +1931,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note,
     };
     setDepositRequests((prev) => [newReq, ...prev]);
-    syncDepositToSupabase(newReq);
+    void syncDepositToSupabase(newReq).then((result) => {
+      if (!result.success) console.error('[Deposit] Request was not saved:', result.error);
+    });
   };
 
   const approveDeposit = (depositId: string) => {
@@ -2035,7 +2053,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setWithdrawalRequests((prev) => [newReq, ...prev]);
-    syncWithdrawalToSupabase(newReq);
+    void syncWithdrawalToSupabase(newReq).then((result) => {
+      if (!result.success) console.error('[Withdrawal] Request was not saved:', result.error);
+    });
 
     logAuditAction(
       'WITHDRAWAL_REQUESTED',
@@ -2132,8 +2152,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setAuditLogs((prev) => [newLog, ...prev]);
     if (isSupabaseConfigured()) {
-      void syncAuditLogToSupabase(newLog).catch((error) => {
-        console.error('[Audit] Activity log was not saved:', error);
+      void syncAuditLogToSupabase(newLog).then((result) => {
+        if (!result.success) console.error('[Audit] Activity log was not saved:', result.error);
       });
     }
   };

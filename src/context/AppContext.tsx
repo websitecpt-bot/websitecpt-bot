@@ -1568,19 +1568,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const reopenSupportSession = (ticketId: string) => {
+    const target = supportTickets.find((ticket) => ticket.id === ticketId);
+    if (!target) return;
     const nowStr = new Date().toISOString();
-    setSupportTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId
-          ? {
-              ...t,
-              status: 'pending',
-              isSessionClosed: false,
-              lastMessageTime: nowStr,
-            }
-          : t
-      )
-    );
+    const updated = {
+      ...target,
+      status: 'pending' as const,
+      isSessionClosed: false,
+      lastMessageTime: nowStr,
+    };
+    setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updated).then((result) => {
+        if (!result.success) console.error('[Support] Reopened ticket was not saved:', result.error);
+      });
+    }
   };
 
   const deleteSupportTicket = (ticketId: string) => {
@@ -1736,17 +1738,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateTicketStatus = (ticketId: string, status: TicketStatus) => {
-    setSupportTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId
-          ? {
-              ...t,
-              status,
-              isSessionClosed: status === 'closed',
-            }
-          : t
-      )
-    );
+    const target = supportTickets.find((ticket) => ticket.id === ticketId);
+    if (!target) return;
+    const updated = {
+      ...target,
+      status,
+      isSessionClosed: status === 'closed',
+    };
+    setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updated).then((result) => {
+        if (!result.success) console.error('[Support] Ticket status was not saved:', result.error);
+      });
+    }
   };
 
   const markUserChatAsRead = () => {
@@ -2127,6 +2131,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
     setAuditLogs((prev) => [newLog, ...prev]);
+    if (isSupabaseConfigured()) {
+      void syncAuditLogToSupabase(newLog).catch((error) => {
+        console.error('[Audit] Activity log was not saved:', error);
+      });
+    }
   };
 
   const transferFunds = ({

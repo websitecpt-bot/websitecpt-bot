@@ -526,8 +526,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (cloudWithdrawals && cloudWithdrawals.length > 0) {
         setWithdrawalRequests(cloudWithdrawals);
       }
-      if (cloudAudit && cloudAudit.length > 0) {
-        setAuditLogs(cloudAudit);
+      if (cloudAudit) {
+        setAuditLogs((prev) => {
+          const merged = new Map(cloudAudit.map((log) => [log.id, log]));
+          prev.forEach((log) => {
+            if (!merged.has(log.id)) merged.set(log.id, log);
+          });
+          return Array.from(merged.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+        });
       }
       setIsSupabaseSynced(true);
     } catch (err) {
@@ -577,6 +585,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       onWithdrawalUpdate: async () => {
         const w = await fetchWithdrawalsFromSupabase();
         if (w && isMounted) setWithdrawalRequests(w);
+      },
+      onAuditLogUpdate: async () => {
+        const cloudLogs = await fetchAuditLogsFromSupabase();
+        if (cloudLogs && isMounted) {
+          setAuditLogs((prev) => {
+            const merged = new Map(cloudLogs.map((log) => [log.id, log]));
+            prev.forEach((log) => {
+              if (!merged.has(log.id)) merged.set(log.id, log);
+            });
+            return Array.from(merged.values()).sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+          });
+        }
       },
     });
 

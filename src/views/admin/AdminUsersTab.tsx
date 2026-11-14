@@ -44,9 +44,11 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
   const isNewTrader = (u: User) => {
     if (!u.createdAt) return false;
     const raw = u.createdAt.trim();
-    const normalized = raw.includes('T') || /Z$|[+-]\\d{2}:?\\d{2}$/.test(raw)
+    const normalized = raw.includes('T')
       ? raw
-      : `${raw.replace(' ', 'T')}Z`;
+      : raw.length === 10
+        ? `${raw}T00:00:00Z`
+        : `${raw.replace(' ', 'T')}Z`;
     const createdMs = Date.parse(normalized);
     const now = Date.now();
     return Number.isFinite(createdMs) && createdMs <= now + 5 * 60 * 1000 && createdMs >= now - 48 * 3600 * 1000;

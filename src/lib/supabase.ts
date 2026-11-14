@@ -624,10 +624,12 @@ export const updateWithdrawalStatusInSupabase = async (
   }
 };
 
-export const syncAuditLogToSupabase = async (log: AuditLog) => {
-  if (!supabase) return;
+export const syncAuditLogToSupabase = async (
+  log: AuditLog
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase is not configured' };
   try {
-    await supabase.from('audit_logs').insert({
+    const { error } = await supabase.from('audit_logs').upsert({
       id: log.id,
       admin_name: log.adminName,
       admin_id: log.adminId,
@@ -635,9 +637,24 @@ export const syncAuditLogToSupabase = async (log: AuditLog) => {
       target: log.target,
       details: log.details,
       timestamp: log.timestamp,
-    });
-  } catch {
-    // Audit logs non-critical
+    }, { onConflict: 'id' });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Unable to save activity log' };
+  }
+};
+
+export const deleteSupportTicketFromSupabase = async (
+  ticketId: string
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase is not configured' };
+  try {
+    const { error } = await supabase.from('support_tickets').delete().eq('id', ticketId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Unable to delete support session' };
   }
 };
 

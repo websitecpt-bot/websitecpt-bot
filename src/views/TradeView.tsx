@@ -136,14 +136,14 @@ export const TradeView: React.FC = () => {
   );
 
   return (
-    <div className="w-full min-w-0 max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+    <div className="trade-page w-full min-w-0 max-w-5xl mx-auto px-2 sm:px-6 py-2 sm:py-6 space-y-2 sm:space-y-6">
       {/* Order Ticket Container */}
-      <div className="min-w-0 bg-[#10141f] border border-[#1e2538] rounded-2xl p-3 sm:p-7 shadow-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1b2131] pb-4 mb-4 sm:mb-5">
-          <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+      <div className="trade-ticket min-w-0 bg-[#10141f] border border-[#1e2538] rounded-xl sm:rounded-2xl p-2 sm:p-7 shadow-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1b2131] pb-2 sm:pb-4 mb-2 sm:mb-5">
+          <h2 className="text-sm sm:text-lg font-bold text-white tracking-wide">
             Order Ticket
           </h2>
-          <div className="flex flex-wrap items-center gap-1.5 text-[10px] sm:text-xs text-slate-400">
+          <div className="trade-top-free-margin hidden sm:flex flex-wrap items-center gap-1.5 text-[10px] sm:text-xs text-slate-400">
             <span>Free Margin (Trading):</span>
             <span className="font-mono font-bold text-amber-400">
               ${currentUser.tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -152,14 +152,14 @@ export const TradeView: React.FC = () => {
         </div>
 
         {/* Coin Selector Pills matching screenshot */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-3 scrollbar-none mb-6">
+        <div className="trade-coin-selector flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 sm:pb-3 scrollbar-none mb-2 sm:mb-6">
           {coins.map((coin) => {
             const isSelected = coin.symbol === selectedSymbol;
             return (
               <button
                 key={coin.symbol}
                 onClick={() => setSelectedSymbol(coin.symbol)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   isSelected
                     ? 'bg-amber-400 text-black shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
                     : 'bg-[#181f2e] text-slate-300 hover:text-white hover:bg-[#20293d] border border-[#242e42]'
@@ -172,13 +172,13 @@ export const TradeView: React.FC = () => {
         </div>
 
         {/* Sell (Bid) and Buy (Ask) Cards matching screenshot */}
-        <div className="grid grid-cols-2 min-w-0 gap-2 sm:gap-4 mb-4">
+        <div className="trade-price-cards grid grid-cols-2 min-w-0 gap-2 sm:gap-4 mb-2 sm:mb-4">
           {/* Sell Box */}
-          <div className="bg-[#1c1216] border border-rose-900/40 rounded-xl p-4 text-center">
+          <div className="bg-[#1c1216] border border-rose-900/40 rounded-lg sm:rounded-xl p-2 sm:p-4 text-center">
             <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider block">
               SELL (Bid)
             </span>
-            <div className="text-lg sm:text-3xl font-mono font-extrabold text-rose-500 mt-1 break-all">
+            <div className="text-base sm:text-3xl font-mono font-extrabold text-rose-500 mt-0.5 sm:mt-1 break-all">
               {bidPrice.toLocaleString(undefined, {
                 minimumFractionDigits: activeCoin.price > 100 ? 2 : 4,
                 maximumFractionDigits: activeCoin.price > 100 ? 2 : 4,
@@ -187,11 +187,11 @@ export const TradeView: React.FC = () => {
           </div>
 
           {/* Buy Box */}
-          <div className="bg-[#0f1d1b] border border-emerald-900/40 rounded-xl p-4 text-center">
+          <div className="bg-[#0f1d1b] border border-emerald-900/40 rounded-lg sm:rounded-xl p-2 sm:p-4 text-center">
             <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
               BUY (Ask)
             </span>
-            <div className="text-lg sm:text-3xl font-mono font-extrabold text-emerald-400 mt-1 break-all">
+            <div className="text-base sm:text-3xl font-mono font-extrabold text-emerald-400 mt-0.5 sm:mt-1 break-all">
               {askPrice.toLocaleString(undefined, {
                 minimumFractionDigits: activeCoin.price > 100 ? 2 : 4,
                 maximumFractionDigits: activeCoin.price > 100 ? 2 : 4,
@@ -201,16 +201,16 @@ export const TradeView: React.FC = () => {
         </div>
 
         {/* Spread Info */}
-        <div className="text-[10px] sm:text-xs text-slate-400 font-mono mb-5 flex flex-wrap justify-between gap-1.5">
+        <div className="text-[9px] sm:text-xs text-slate-400 font-mono mb-2 sm:mb-5 flex flex-wrap justify-between gap-x-2 gap-y-0.5">
           <span>Spread: {activeCoin.spread.toFixed(4)}</span>
-          <span>Market Feed: Standard Fast Execution</span>
+          <span className="hidden sm:inline">Market Feed: Standard Fast Execution</span>
         </div>
 
         {/* Leverage Controls - Editable Input matching Screenshot 2 */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 sm:mb-5">
           <label className="text-xs text-slate-300 font-medium">Leverage</label>
           <div className="text-right">
-            <div className="inline-flex items-center gap-1.5 bg-[#141a27] border border-[#232d42] rounded-lg px-3 py-1.5 focus-within:border-amber-400">
+            <div className="inline-flex items-center gap-1.5 bg-[#141a27] border border-[#232d42] rounded-lg px-2.5 sm:px-3 py-1 sm:py-1.5 focus-within:border-amber-400">
               <input
                 type="text"
                 inputMode="numeric"
@@ -230,14 +230,14 @@ export const TradeView: React.FC = () => {
               />
               <span className="font-bold text-slate-300 text-sm">x</span>
             </div>
-            <div className="text-[11px] text-slate-400 mt-1">
+            <div className="text-[9px] sm:text-[11px] text-slate-400 mt-0.5 sm:mt-1">
               Maximum leverage limit: <strong className="text-amber-400 font-bold">{activeCoin.maxLeverage}x</strong>
             </div>
           </div>
         </div>
 
         {/* Expiry Duration matching screenshot */}
-        <div className="space-y-2 mb-5">
+        <div className="space-y-1 sm:space-y-2 mb-2 sm:mb-5">
           <label className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-amber-400" />
             <span>Expiry Duration</span>
@@ -247,7 +247,7 @@ export const TradeView: React.FC = () => {
               <button
                 key={opt.value}
                 onClick={() => setDurationMinutes(opt.value)}
-                className={`min-w-0 py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all border ${
+                className={`min-w-0 py-1.5 sm:py-2 text-[9px] sm:text-xs font-semibold rounded-md sm:rounded-lg transition-all border ${
                   durationMinutes === opt.value
                     ? 'border-amber-400 bg-amber-400/15 text-amber-300'
                     : 'border-[#222a3d] bg-[#141a27] text-slate-400 hover:text-white'
@@ -260,7 +260,7 @@ export const TradeView: React.FC = () => {
         </div>
 
         {/* Margin Input matching Screenshot 2 (25% Balance removed, Free Margin shown in yellow below input) */}
-        <div className="space-y-1.5 mb-6">
+        <div className="space-y-1 mb-2 sm:mb-6">
           <div className="flex items-center justify-between text-xs">
             <label className="text-slate-300 font-medium">Margin (USDT)</label>
           </div>
@@ -270,19 +270,19 @@ export const TradeView: React.FC = () => {
               value={marginInput}
               onChange={(e) => setMarginInput(e.target.value)}
               placeholder="0.00"
-              className="w-full bg-[#151a26] border border-[#242d40] focus:border-amber-400 rounded-xl px-4 py-3 text-white font-mono text-base outline-none transition-colors"
+              className="w-full bg-[#151a26] border border-[#242d40] focus:border-amber-400 rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-white font-mono text-base outline-none transition-colors"
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
               USDT
             </span>
           </div>
-          <div className="text-xs text-amber-400 font-bold mt-1.5">
+          <div className="text-[10px] sm:text-xs text-amber-400 font-bold mt-1">
             Free Margin (Trading Wallet): ${currentUser.tradingBalance.toFixed(2)}
           </div>
         </div>
 
         {/* Calculations Breakdown matching screenshot */}
-        <div className="bg-[#0b0e15] border border-[#1a202e] rounded-xl p-3.5 space-y-2 text-xs mb-6">
+        <div className="trade-calculations bg-[#0b0e15] border border-[#1a202e] rounded-lg sm:rounded-xl p-2 sm:p-3.5 space-y-1 sm:space-y-2 text-[10px] sm:text-xs mb-2 sm:mb-6">
           <div className="flex justify-between text-slate-400">
             <span>Position Size</span>
             <span className="font-mono font-medium text-slate-200">
@@ -323,17 +323,17 @@ export const TradeView: React.FC = () => {
         )}
 
         {/* Big Action Buttons matching screenshot */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4">
           <button
             onClick={() => handleOrder('SELL')}
-            className="w-full bg-[#ef4444] hover:bg-[#dc2626] text-white font-bold py-3.5 rounded-xl text-sm transition-all shadow-lg shadow-rose-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full bg-[#ef4444] hover:bg-[#dc2626] text-white font-bold py-2.5 sm:py-3.5 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-rose-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
             <TrendingDown className="w-4 h-4" />
             <span>SELL</span>
           </button>
           <button
             onClick={() => handleOrder('BUY')}
-            className="w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold py-3.5 rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold py-2.5 sm:py-3.5 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
             <TrendingUp className="w-4 h-4" />
             <span>BUY</span>
@@ -342,8 +342,8 @@ export const TradeView: React.FC = () => {
       </div>
 
       {/* Open Trades Container matching screenshot */}
-      <div className="min-w-0 bg-[#10141f] border border-[#1e2538] rounded-2xl p-3 sm:p-6 shadow-xl">
-        <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+      <div className="trade-open-trades min-w-0 bg-[#10141f] border border-[#1e2538] rounded-xl sm:rounded-2xl p-2 sm:p-6 shadow-xl">
+        <h3 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-4 flex items-center gap-2">
           <span>Open Trades ({userOpenTrades.length})</span>
           {userOpenTrades.length > 0 && (
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -351,7 +351,7 @@ export const TradeView: React.FC = () => {
         </h3>
 
         {userOpenTrades.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-500 border border-dashed border-[#1f2637] rounded-xl">
+          <div className="py-3 sm:py-8 text-center text-xs text-slate-500 border border-dashed border-[#1f2637] rounded-xl">
             No active open trades right now.
           </div>
         ) : (

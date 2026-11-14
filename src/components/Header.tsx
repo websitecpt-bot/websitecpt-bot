@@ -40,9 +40,9 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 bg-[#0d111a] border-b border-[#1f2637] select-none">
       {/* Top Ticker Ribbon with high-contrast, razor-sharp anti-blur marquee of top cryptocurrencies */}
-      <div className="bg-[#070a10] border-b border-[#161c2b] py-1.5 overflow-hidden select-none relative">
+      <div className="bg-[#070a10] border-b border-[#161c2b] py-1 sm:py-1.5 overflow-hidden select-none relative">
         <div
-          className="animate-ticker-marquee flex items-center gap-8 text-xs text-white"
+          className="animate-ticker-marquee flex items-center gap-5 sm:gap-8 text-[10px] sm:text-xs text-white"
           style={{
             WebkitFontSmoothing: 'antialiased',
             MozOsxFontSmoothing: 'grayscale',
@@ -50,7 +50,7 @@ export const Header: React.FC = () => {
           }}
         >
           {/* First loop track */}
-          <div className="flex items-center gap-7 whitespace-nowrap">
+          <div className="flex items-center gap-5 sm:gap-7 whitespace-nowrap">
             {['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'SUI', 'NEAR', 'TRX'].map((sym) => {
               const coin = coins.find((c) => c.symbol === sym) || {
                 symbol: sym,
@@ -83,7 +83,7 @@ export const Header: React.FC = () => {
           </div>
 
           {/* Duplicate track for seamless 360-degree continuous loop */}
-          <div className="flex items-center gap-7 whitespace-nowrap" aria-hidden="true">
+          <div className="flex items-center gap-5 sm:gap-7 whitespace-nowrap" aria-hidden="true">
             {['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'SUI', 'NEAR', 'TRX'].map((sym) => {
               const coin = coins.find((c) => c.symbol === sym) || {
                 symbol: sym,
@@ -118,14 +118,14 @@ export const Header: React.FC = () => {
       </div>
 
       {/* Main Navigation Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div className="header-mainbar w-full max-w-7xl mx-auto px-2 sm:px-6 h-12 sm:h-16 flex items-center justify-between gap-1.5">
         {/* Brand Logo */}
-        <div className="flex items-center gap-8">
+        <div className="min-w-0 flex flex-1 items-center gap-2 md:gap-8">
           <div
             onClick={() => setActiveTab('home')}
             className="cursor-pointer group"
           >
-            <CptLogo size={32} showText={true} />
+            <CptLogo size={32} showText={true} className="header-brand-logo" />
           </div>
 
           {/* Nav Links (Desktop) */}
@@ -184,11 +184,11 @@ export const Header: React.FC = () => {
         </div>
 
         {/* Right side controls: Live Support, Language, and Customer UID Badge */}
-        <div className="flex items-center gap-2">
+        <div className="header-controls flex shrink-0 items-center gap-1 sm:gap-2">
           {/* Live Support Trigger with badge */}
           <button
             onClick={() => setIsSupportOpen(true)}
-            className="relative flex items-center gap-1.5 bg-[#171f2e] hover:bg-[#202b3f] text-slate-200 border border-[#2b364e] px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all shadow-sm cursor-pointer"
+            className="relative flex items-center gap-1 sm:gap-1.5 bg-[#171f2e] hover:bg-[#202b3f] text-slate-200 border border-[#2b364e] px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-md text-[10px] sm:text-xs font-medium transition-all shadow-sm cursor-pointer"
             title="Open Live Support Chat"
           >
             <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
@@ -205,7 +205,7 @@ export const Header: React.FC = () => {
             <button
               type="button"
               onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-              className="flex items-center gap-1.5 bg-[#121622] hover:bg-[#1a2030] active:scale-95 border border-[#242c3f] px-2 sm:px-2.5 py-1.5 rounded-md text-xs text-slate-200 transition-all cursor-pointer"
+              className="flex items-center gap-1 bg-[#121622] hover:bg-[#1a2030] active:scale-95 border border-[#242c3f] px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-md text-[10px] sm:text-xs text-slate-200 transition-all cursor-pointer"
               title="Select Language"
             >
               <span className="text-sm leading-none">{currentLangObj.flag}</span>
@@ -265,14 +265,14 @@ export const Header: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('account')}
-            className="flex items-center gap-1.5 bg-[#141925] hover:bg-[#1c2333] border border-[#232c40] px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer group"
+            className="header-uid-badge max-w-[74px] min-w-0 flex items-center gap-1 bg-[#141925] hover:bg-[#1c2333] border border-[#232c40] px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[10px] sm:text-xs transition-all cursor-pointer group"
             title="My Account"
           >
-            <span className="text-slate-400 text-[11px]">UID:</span>
-            <span className="font-mono font-bold text-amber-400 group-hover:text-amber-300">
+            <span className="header-uid-label hidden min-[390px]:inline text-slate-400 text-[9px] sm:text-[11px]">UID:</span>
+            <span className="header-uid-value max-w-[30px] sm:max-w-[4.5rem] truncate font-mono font-bold text-amber-400 group-hover:text-amber-300" title={currentUser.uid}>
               {currentUser.uid}
             </span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Online"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Online"></span>
           </button>
         </div>
       </div>

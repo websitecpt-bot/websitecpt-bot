@@ -688,3 +688,10 @@ textarea {
     font-size: 12px;
   }
 }
+
+
+@media (max-width: 389px) {
+  .header-brand-logo > div:nth-child(2) > span:last-child {
+    display: none;
+  }
+}

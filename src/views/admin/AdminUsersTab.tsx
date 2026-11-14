@@ -27,6 +27,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
     depositRequests,
     withdrawalRequests,
     supportTickets,
+    auditLogs,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -455,15 +456,41 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
                         <div className="flex flex-wrap justify-between gap-2 text-[10px]"><strong className="text-white">Session {ticket.sessionNumber || '—'} · {ticket.status}</strong><span className="text-slate-500">{ticket.lastMessageTime}</span></div>
                         <div className="mt-1 text-[10px] text-slate-400">{ticket.messages.length} messages · {ticket.lastMessage || 'No message preview'}</div>
                         <div className="mt-2 space-y-1 border-t border-[#263149] pt-2">
-                          {ticket.messages.slice(-8).map((message) => (
+                          {ticket.messages.map((message) => (
                             <div key={message.id} className="text-[10px] text-slate-400">
                               <span className={message.sender === 'admin' ? 'text-cyan-300' : 'text-emerald-300'}>{message.senderName}</span>
                               <span className="text-slate-600"> · {message.timestamp}</span>
                               <div className="break-words text-slate-300">{message.isDeleted ? 'Message deleted' : message.text || (message.attachmentName ? `Attachment: ${message.attachmentName}` : 'Attachment')}</div>
                             </div>
                           ))}
-                          {ticket.messages.length > 8 && <div className="text-[9px] text-slate-500">Showing latest 8 of {ticket.messages.length} messages</div>}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Cloud-synced activity history */}
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-2">Admin Activity History</h4>
+                {auditLogs.filter((log) =>
+                  log.target.includes(selectedUserForHistory.uid) ||
+                  log.target.includes(selectedUserForHistory.id)
+                ).length === 0 ? (
+                  <p className="text-xs text-slate-500">No matching admin activity records are available.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {auditLogs.filter((log) =>
+                      log.target.includes(selectedUserForHistory.uid) ||
+                      log.target.includes(selectedUserForHistory.id)
+                    ).map((log) => (
+                      <div key={log.id} className="rounded-lg border border-[#263149] bg-[#151b2a] p-3 text-[10px] sm:text-xs">
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <strong className="text-cyan-300">{log.action}</strong>
+                          <span className="text-slate-500">{log.timestamp}</span>
+                        </div>
+                        <div className="mt-1 text-slate-300">{log.details}</div>
+                        <div className="mt-1 text-slate-500">By {log.adminName}</div>
                       </div>
                     ))}
                   </div>

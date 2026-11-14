@@ -322,7 +322,7 @@ body {
   .admin-portal main input,
   .admin-portal main select,
   .admin-portal main textarea {
-    width: 100%;
+    max-width: 100%;
     min-width: 0;
   }
 

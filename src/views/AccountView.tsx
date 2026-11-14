@@ -311,7 +311,7 @@ export const AccountView: React.FC = () => {
               <span className="font-mono text-xs font-bold text-amber-400">{currentUser.uid}</span>
               <span className="text-[11px] text-slate-400">- Main Account</span>
             </div>
-            <div className="hidden sm:flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1">
               <label
                 htmlFor="avatar-upload"
                 className="inline-flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"

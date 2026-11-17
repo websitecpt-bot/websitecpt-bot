@@ -46,6 +46,25 @@ export interface Trade {
   scheduledPercent?: number;
 }
 
+export interface AgreementAdminRecord {
+  id: string;
+  userId: string;
+  fullName: string;
+  username: string;
+  uid: string;
+  agreementNumber: string;
+  startDate: string;
+  durationDays: number;
+  endDate: string;
+  tradingPurpose: string;
+  tradeAmount: number;
+  status: 'active' | 'completed' | 'cancelled';
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  statusReason?: string;
+}
+
 export interface SupportMessage {
   id: string;
   sender: 'user' | 'admin';
@@ -62,6 +81,9 @@ export interface SupportMessage {
   isSystem?: boolean;
   /** True for admin-only audit entries when a customer opens Support. */
   isVisitEvent?: boolean;
+  /** Compact agreement metadata synced through the existing support ticket channel. Sensitive ID/signature/address data is deliberately excluded. */
+  isAgreementEvent?: boolean;
+  agreementData?: AgreementAdminRecord;
 }
 
 export type TicketStatus = 'pending' | 'answered' | 'closed';
@@ -199,7 +221,10 @@ export interface ClientTradingAgreement {
   ageConfirmed: boolean;
   termsAgreed: boolean;
   // Meta
-  status: 'active' | 'completed' | 'pending';
+  status: 'active' | 'completed' | 'pending' | 'cancelled';
   submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  statusReason?: string;
 }
 

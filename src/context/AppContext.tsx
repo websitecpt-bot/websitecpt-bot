@@ -15,6 +15,7 @@ import {
   SystemSettings,
   Language,
   ClientTradingAgreement,
+  AgreementAdminRecord,
 } from '../types';
 import {
   initialUsers,
@@ -85,6 +86,7 @@ interface AppContextType {
   clientAgreement: ClientTradingAgreement | null;
   submitAgreement: (data: Omit<ClientTradingAgreement, 'id' | 'agreementNumber' | 'submittedAt' | 'status'>) => Promise<ClientTradingAgreement>;
   resetAgreement: () => void;
+  updateClientAgreementStatus: (agreementId: string, status: 'completed' | 'cancelled', reason?: string) => { success: boolean; message: string };
 
   // Modals
   isSupportOpen: boolean;
@@ -275,6 +277,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setClientAgreement(loadState('cpt_agreement_' + currentUserId, null));
   }, [currentUserId]);
 
+  // Keep the local certificate status in sync with Admin decisions delivered through the existing Support Inbox.
+  useEffect(() => {
+    const latest = supportTickets
+      .filter((ticket) => ticket.userId === currentUserId)
+      .flatMap((ticket) => ticket.messages || [])
+      .filter((message) => message.isAgreementEvent && message.agreementData)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]?.agreementData;
+    if (!latest) return;
+    setClientAgreement((previous) => {
+      if (!previous || previous.id !== latest.id) return previous;
+      const next = { ...previous, status: latest.status, reviewedAt: latest.reviewedAt, reviewedBy: latest.reviewedBy, statusReason: latest.statusReason };
+      saveState('cpt_agreement_' + currentUserId, next);
+      return next;
+    });
+  }, [supportTickets, currentUserId]);
+
   const submitAgreement = async (
     data: Omit<ClientTradingAgreement, 'id' | 'agreementNumber' | 'submittedAt' | 'status'>
   ): Promise<ClientTradingAgreement> => {
@@ -288,6 +306,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setClientAgreement(newAgreement);
     saveState('cpt_agreement_' + currentUserId, newAgreement);
+
+    // Reuse the already-connected Support Inbox as the cross-device transport. Only compact
+    // agreement metadata is synced; identity images, signature, street address and phone are not.
+    const agreementData: AgreementAdminRecord = {
+      id: newAgreement.id,
+      userId: newAgreement.userId,
+      fullName: newAgreement.fullName,
+      username: newAgreement.username,
+      uid: newAgreement.uid,
+      agreementNumber: newAgreement.agreementNumber,
+      startDate: newAgreement.startDate,
+      durationDays: newAgreement.durationDays,
+      endDate: newAgreement.endDate,
+      tradingPurpose: newAgreement.tradingPurpose,
+      tradeAmount: newAgreement.tradeAmount,
+      status: 'active',
+      submittedAt: newAgreement.submittedAt,
+    };
+    const agreementMessage: SupportMessage = {
+      id: `msg-agreement-${newAgreement.id}`,
+      sender: 'user',
+      senderName: currentUser.name,
+      text: `📄 Agreement submitted · ${newAgreement.agreementNumber}`,
+      timestamp: newAgreement.submittedAt,
+      read: false,
+      isSystem: true,
+      isAgreementEvent: true,
+      agreementData,
+    };
+    const userTickets = supportTickets.filter((ticket) => ticket.userId === currentUserId);
+    const activeTicket = userTickets.find((ticket) => !ticket.isSessionClosed && ticket.status !== 'closed');
+    const agreementTicket: SupportTicket = activeTicket
+      ? { ...activeTicket, status: 'pending', isSessionClosed: false, lastMessage: agreementMessage.text, lastMessageTime: agreementMessage.timestamp, unreadAdminCount: (activeTicket.unreadAdminCount || 0) + 1, messages: [...(activeTicket.messages || []), agreementMessage] }
+      : { id: `ticket-agreement-${newAgreement.id}`, userId: currentUser.id, userName: currentUser.name, userEmail: currentUser.email, status: 'pending', isSessionClosed: false, sessionNumber: 240 + userTickets.length + 1, lastMessage: agreementMessage.text, lastMessageTime: agreementMessage.timestamp, unreadAdminCount: 1, unreadUserCount: 0, messages: [agreementMessage] };
+    setSupportTickets((previous) => {
+      const exists = previous.some((ticket) => ticket.id === agreementTicket.id);
+      const next = exists ? previous.map((ticket) => ticket.id === agreementTicket.id ? agreementTicket : ticket) : [agreementTicket, ...previous];
+      return next.sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
+    });
+    if (isSupabaseConfigured()) {
+      const result = await syncTicketToSupabase(agreementTicket);
+      if (!result.success) throw new Error(`Agreement saved on this device, but cloud sync failed: ${result.error || 'Please contact Support.'}`);
+    }
 
     const newLog: AuditLog = {
       id: 'log-' + Date.now(),
@@ -303,7 +364,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newAgreement;
   };
 
+  const updateClientAgreementStatus = (agreementId: string, status: 'completed' | 'cancelled', reason = '') => {
+    const targetTicket = supportTickets.find((ticket) =>
+      (ticket.messages || []).some((message) => message.isAgreementEvent && message.agreementData?.id === agreementId)
+    );
+    if (!targetTicket) return { success: false, message: 'Agreement not found.' };
+    const targetMessage = (targetTicket.messages || []).find((message) =>
+      message.isAgreementEvent && message.agreementData?.id === agreementId
+    );
+    if (!targetMessage?.agreementData || targetMessage.agreementData.status !== 'active') {
+      return { success: false, message: 'Agreement not found or it is no longer running.' };
+    }
+
+    const reviewedAt = new Date().toISOString();
+    const updatedRecord: AgreementAdminRecord = {
+      ...targetMessage.agreementData,
+      status,
+      reviewedAt,
+      reviewedBy: adminName,
+      statusReason: reason.trim() || undefined,
+    };
+    const updatedMessages = (targetTicket.messages || []).map((message) =>
+      message.id === targetMessage.id
+        ? { ...message, text: `📄 Agreement ${status} · ${updatedRecord.agreementNumber}`, timestamp: reviewedAt, agreementData: updatedRecord }
+        : message
+    );
+    const updatedTicket: SupportTicket = {
+      ...targetTicket,
+      messages: updatedMessages,
+      lastMessage: updatedMessages[updatedMessages.length - 1]?.text || targetTicket.lastMessage,
+      lastMessageTime: reviewedAt,
+      unreadUserCount: (targetTicket.unreadUserCount || 0) + 1,
+    };
+    setSupportTickets((previous) => previous.map((ticket) => ticket.id === targetTicket.id ? updatedTicket : ticket));
+    if (isSupabaseConfigured()) {
+      void syncTicketToSupabase(updatedTicket).then((result) => {
+        if (!result.success) console.error('[Agreement] Admin status was not saved to cloud:', result.error);
+      });
+    }
+    const newLog: AuditLog = {
+      id: `log-${Date.now()}`,
+      adminName,
+      adminId: currentUser.id,
+      action: status === 'completed' ? 'CLIENT_AGREEMENT_COMPLETED' : 'CLIENT_AGREEMENT_CANCELLED',
+      target: `${updatedRecord.fullName} (${updatedRecord.uid})`,
+      details: `Agreement ${updatedRecord.agreementNumber} ${status}.${reason.trim() ? ` Reason: ${reason.trim()}` : ''}`,
+      timestamp: reviewedAt,
+    };
+    setAuditLogs((previous) => [newLog, ...previous]);
+    return { success: true, message: `Agreement ${status}.` };
+  };
+
   const resetAgreement = () => {
+    if (clientAgreement?.status === 'active') return;
     setClientAgreement(null);
     saveState('cpt_agreement_' + currentUserId, null);
   };
@@ -2367,6 +2480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clientAgreement,
         submitAgreement,
         resetAgreement,
+        updateClientAgreementStatus,
         isSupportOpen,
         setIsSupportOpen,
         isDepositModalOpen,

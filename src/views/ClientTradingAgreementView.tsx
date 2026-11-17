@@ -65,6 +65,10 @@ export const ClientTradingAgreementView: React.FC = () => {
     return clientAgreement ? 'summary' : 'form';
   });
 
+  useEffect(() => {
+    if (clientAgreement) setViewMode('summary');
+  }, [clientAgreement]);
+
   // Section 01: Client Information
   const [fullName, setFullName] = useState(currentUser.name || '');
   const username = currentUser.name;
@@ -618,10 +622,11 @@ export const ClientTradingAgreementView: React.FC = () => {
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <div>
-                  <h2 className="text-sm sm:text-base font-bold text-white">Trading Agreement Executed</h2>
+                  <h2 className="text-sm sm:text-base font-bold text-white">{clientAgreement.status === 'active' ? 'Company Agreement is Running' : clientAgreement.status === 'completed' ? 'Agreement Completed' : clientAgreement.status === 'cancelled' ? 'Agreement Cancelled' : 'Agreement Submitted'}</h2>
                   <p className="text-xs text-emerald-300 mt-0.5">
-                    Your agreement is saved. Ref: <strong className="font-mono text-white">{clientAgreement.agreementNumber}</strong>
+                    Status: <strong className="font-mono uppercase text-white">{clientAgreement.status === 'active' ? 'RUNNING' : clientAgreement.status}</strong> · Ref: <strong className="font-mono text-white">{clientAgreement.agreementNumber}</strong>
                   </p>
+                  {clientAgreement.statusReason && <p className="mt-1 text-xs text-rose-300">Admin note: {clientAgreement.statusReason}</p>}
                 </div>
               </div>
 
@@ -679,8 +684,8 @@ export const ClientTradingAgreementView: React.FC = () => {
                     <span className="text-amber-400 font-bold text-sm block mt-0.5">
                       {clientAgreement.agreementNumber}
                     </span>
-                    <span className="text-emerald-400 text-[10px] font-semibold flex items-center sm:justify-end gap-1 mt-1">
-                      <Check className="w-3 h-3" /> Legally Executed
+                    <span className={`text-[10px] font-semibold flex items-center sm:justify-end gap-1 mt-1 ${clientAgreement.status === 'active' ? 'text-emerald-400' : clientAgreement.status === 'completed' ? 'text-cyan-300' : 'text-rose-300'}`}>
+                      <Check className="w-3 h-3" /> {clientAgreement.status === 'active' ? 'RUNNING' : clientAgreement.status.toUpperCase()}
                     </span>
                   </div>
                 </div>
@@ -841,17 +846,16 @@ export const ClientTradingAgreementView: React.FC = () => {
 
             {/* Bottom Actions */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 no-print">
-              <button
-                type="button"
-                onClick={() => {
-                  resetAgreement();
-                  setViewMode('form');
-                }}
-                className="w-full sm:w-auto text-xs text-slate-400 hover:text-amber-400 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl border border-[#1f2c47] hover:border-amber-400/40 transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Submit New / Edit Agreement</span>
-              </button>
+              {clientAgreement.status !== 'active' && (
+                <button
+                  type="button"
+                  onClick={() => { resetAgreement(); setViewMode('form'); }}
+                  className="w-full sm:w-auto text-xs text-slate-400 hover:text-amber-400 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl border border-[#1f2c47] hover:border-amber-400/40 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Submit New Agreement</span>
+                </button>
+              )}
 
               <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-2.5">
                 <button

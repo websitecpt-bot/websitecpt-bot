@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { AdminDashboardTab } from './admin/AdminDashboardTab';
 import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminSupportTab } from './admin/AdminSupportTab';
+import { AdminAgreementsTab } from './admin/AdminAgreementsTab';
 import { AdminBalanceTab } from './admin/AdminBalanceTab';
 import { AdminMarketsTab } from './admin/AdminMarketsTab';
 import { AdminDepositsTab } from './admin/AdminDepositsTab';
@@ -92,6 +93,7 @@ export const AdminPanel: React.FC = () => {
   const newCustomerCount = activeCustomerAccounts.filter(isRecentCustomer).length;
   const existingCustomerCount = activeCustomerAccounts.length - newCustomerCount;
   const archivedCustomerCount = customerAccounts.length - activeCustomerAccounts.length;
+  const runningAgreementCount = supportTickets.reduce((count, ticket) => count + (ticket.messages || []).filter((message) => message.isAgreementEvent && message.agreementData?.status === 'active').length, 0);
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,6 +233,14 @@ export const AdminPanel: React.FC = () => {
       icon: Archive,
       badge: archivedCustomerCount,
       badgeColor: 'bg-violet-500 text-white',
+    },
+    {
+      id: 'agreements',
+      label: 'Agreement Management',
+      description: 'Customer contracts & status control',
+      icon: FileText,
+      badge: runningAgreementCount,
+      badgeColor: 'bg-amber-400 text-black',
     },
     {
       id: 'support',
@@ -443,6 +453,7 @@ export const AdminPanel: React.FC = () => {
           {activeAdminSubTab === 'archived-users' && <AdminUsersTab segment="archived" />}
           {activeAdminSubTab === 'users' && <AdminUsersTab segment="existing" />}
           {activeAdminSubTab === 'support' && <AdminSupportTab />}
+          {activeAdminSubTab === 'agreements' && <AdminAgreementsTab />}
           {activeAdminSubTab === 'balance' && <AdminBalanceTab />}
           {activeAdminSubTab === 'markets' && <AdminMarketsTab />}
           {activeAdminSubTab === 'deposits' && <AdminDepositsTab />}

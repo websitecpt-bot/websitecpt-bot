@@ -2391,6 +2391,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLanguage,
         balanceAdjustments,
         adjustUserBalance,
+        adminTransferFunds,
         depositRequests,
         submitDepositRequest,
         approveDeposit,

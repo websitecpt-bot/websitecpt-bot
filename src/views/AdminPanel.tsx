@@ -32,6 +32,7 @@ import {
   RefreshCw,
   Radio,
   UserPlus,
+  Archive,
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { AdminLiveTradingTab } from './admin/AdminLiveTradingTab';
@@ -87,8 +88,10 @@ export const AdminPanel: React.FC = () => {
     const now = Date.now();
     return Number.isFinite(createdAt) && createdAt <= now + 5 * 60 * 1000 && createdAt >= now - 48 * 60 * 60 * 1000;
   };
-  const newCustomerCount = customerAccounts.filter(isRecentCustomer).length;
-  const existingCustomerCount = customerAccounts.length - newCustomerCount;
+  const activeCustomerAccounts = customerAccounts.filter((user) => user.status !== 'archived');
+  const newCustomerCount = activeCustomerAccounts.filter(isRecentCustomer).length;
+  const existingCustomerCount = activeCustomerAccounts.length - newCustomerCount;
+  const archivedCustomerCount = customerAccounts.length - activeCustomerAccounts.length;
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,6 +223,14 @@ export const AdminPanel: React.FC = () => {
       icon: Users,
       badge: existingCustomerCount,
       badgeColor: 'bg-cyan-400 text-black',
+    },
+    {
+      id: 'archived-users',
+      label: 'Archived Customers',
+      description: 'Archived accounts · restore access',
+      icon: Archive,
+      badge: archivedCustomerCount,
+      badgeColor: 'bg-violet-500 text-white',
     },
     {
       id: 'support',
@@ -429,6 +440,7 @@ export const AdminPanel: React.FC = () => {
           )}
           {activeAdminSubTab === 'new-users' && <AdminUsersTab segment="new" />}
           {activeAdminSubTab === 'existing-users' && <AdminUsersTab segment="existing" />}
+          {activeAdminSubTab === 'archived-users' && <AdminUsersTab segment="archived" />}
           {activeAdminSubTab === 'users' && <AdminUsersTab segment="existing" />}
           {activeAdminSubTab === 'support' && <AdminSupportTab />}
           {activeAdminSubTab === 'balance' && <AdminBalanceTab />}

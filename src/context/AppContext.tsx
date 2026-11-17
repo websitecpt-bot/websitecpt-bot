@@ -1101,6 +1101,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  useEffect(() => {
+    if (isUserLoggedIn && currentUser?.status === 'archived') {
+      logoutUser();
+    }
+  }, [isUserLoggedIn, currentUser?.status]);
+
   const updateUserAvatar = (avatarUrl: string) => {
     setUsers((prev) => {
       const updated = prev.map((u) => (u.id === currentUserId ? { ...u, avatar: avatarUrl } : u));

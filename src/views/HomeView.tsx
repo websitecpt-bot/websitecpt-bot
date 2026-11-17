@@ -33,10 +33,15 @@ export const HomeView: React.FC = () => {
   const t = TRANSLATIONS[language] || TRANSLATIONS.en;
   const [showBalance, setShowBalance] = useState(true);
 
-  // Calculate live floating PnL from active trades
+  // Keep the account summary stable while positions are open.
+  // Margin and the entry fee are deducted when a trade opens; add those locked
+  // amounts back to this display snapshot until settlement. Realized results
+  // appear only after each trade is closed and its balance is credited.
   const activeTrades = trades.filter((t) => t.userId === currentUser.id && t.status === 'OPEN');
-  const floatingPnL = activeTrades.reduce((acc, t) => acc + t.pnl, 0);
-  const equity = currentUser.tradingBalance + floatingPnL;
+  const lockedForOpenTrades = activeTrades.reduce((sum, trade) => sum + trade.margin + (trade.fee || 0), 0);
+  const displayTradingBalance = Number((currentUser.tradingBalance + lockedForOpenTrades).toFixed(2));
+  const floatingPnL = 0;
+  const equity = displayTradingBalance;
   const totalAssets = currentUser.fundingBalance + equity;
 
   return (

@@ -815,9 +815,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const userPayouts = payouts.filter((p) => p.userId === u.id);
                 if (userPayouts.length > 0) {
                   const totalReturn = userPayouts.reduce((sum, p) => sum + p.returnAmount, 0);
+                  const updatedTradingBalance = Number((u.tradingBalance + totalReturn).toFixed(2));
+
+                  // Persist expiry settlement to Supabase as well as local state.
+                  // Margin was deducted when the trade opened; return margin + PnL here.
+                  if (isSupabaseConfigured()) {
+                    updateUserBalanceInSupabase(u.id, updatedTradingBalance, u.fundingBalance);
+                  }
+
                   return {
                     ...u,
-                    tradingBalance: Number((u.tradingBalance + totalReturn).toFixed(2)),
+                    tradingBalance: updatedTradingBalance,
                   };
                 }
                 return u;

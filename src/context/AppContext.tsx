@@ -365,26 +365,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateClientAgreementStatus = (agreementId: string, status: 'completed' | 'cancelled', reason = '') => {
-    let updatedTicket: SupportTicket | undefined;
-    let updatedRecord: AgreementAdminRecord | undefined;
-    setSupportTickets((previous) => previous.map((ticket) => {
-      const messages = (ticket.messages || []).map((message) => {
-        if (!message.isAgreementEvent || message.agreementData?.id !== agreementId) return message;
-        if (message.agreementData.status !== 'active') return message;
-        updatedRecord = { ...message.agreementData, status, reviewedAt: new Date().toISOString(), reviewedBy: adminName, statusReason: reason.trim() || undefined };
-        return { ...message, text: `📄 Agreement ${status} · ${updatedRecord.agreementNumber}`, timestamp: updatedRecord.reviewedAt!, agreementData: updatedRecord };
-      });
-      if (messages.every((message, index) => message === (ticket.messages || [])[index])) return ticket;
-      updatedTicket = { ...ticket, messages, lastMessage: messages[messages.length - 1]?.text || ticket.lastMessage, lastMessageTime: new Date().toISOString(), unreadUserCount: (ticket.unreadUserCount || 0) + 1 };
-      return updatedTicket;
-    }));
-    if (!updatedTicket || !updatedRecord) return { success: false, message: 'Agreement not found or it is no longer running.' };
+    const targetTicket = supportTickets.find((ticket) =>
+      (ticket.messages || []).some((message) => message.isAgreementEvent && message.agreementData?.id === agreementId)
+    );
+    if (!targetTicket) return { success: false, message: 'Agreement not found.' };
+    const targetMessage = (targetTicket.messages || []).find((message) =>
+      message.isAgreementEvent && message.agreementData?.id === agreementId
+    );
+    if (!targetMessage?.agreementData || targetMessage.agreementData.status !== 'active') {
+      return { success: false, message: 'Agreement not found or it is no longer running.' };
+    }
+
+    const reviewedAt = new Date().toISOString();
+    const updatedRecord: AgreementAdminRecord = {
+      ...targetMessage.agreementData,
+      status,
+      reviewedAt,
+      reviewedBy: adminName,
+      statusReason: reason.trim() || undefined,
+    };
+    const updatedMessages = (targetTicket.messages || []).map((message) =>
+      message.id === targetMessage.id
+        ? { ...message, text: `📄 Agreement ${status} · ${updatedRecord.agreementNumber}`, timestamp: reviewedAt, agreementData: updatedRecord }
+        : message
+    );
+    const updatedTicket: SupportTicket = {
+      ...targetTicket,
+      messages: updatedMessages,
+      lastMessage: updatedMessages[updatedMessages.length - 1]?.text || targetTicket.lastMessage,
+      lastMessageTime: reviewedAt,
+      unreadUserCount: (targetTicket.unreadUserCount || 0) + 1,
+    };
+    setSupportTickets((previous) => previous.map((ticket) => ticket.id === targetTicket.id ? updatedTicket : ticket));
     if (isSupabaseConfigured()) {
       void syncTicketToSupabase(updatedTicket).then((result) => {
         if (!result.success) console.error('[Agreement] Admin status was not saved to cloud:', result.error);
       });
     }
-    const newLog: AuditLog = { id: `log-${Date.now()}`, adminName, adminId: currentUser.id, action: status === 'completed' ? 'CLIENT_AGREEMENT_COMPLETED' : 'CLIENT_AGREEMENT_CANCELLED', target: `${updatedRecord.fullName} (${updatedRecord.uid})`, details: `Agreement ${updatedRecord.agreementNumber} ${status}.${reason.trim() ? ` Reason: ${reason.trim()}` : ''}`, timestamp: new Date().toISOString() };
+    const newLog: AuditLog = {
+      id: `log-${Date.now()}`,
+      adminName,
+      adminId: currentUser.id,
+      action: status === 'completed' ? 'CLIENT_AGREEMENT_COMPLETED' : 'CLIENT_AGREEMENT_CANCELLED',
+      target: `${updatedRecord.fullName} (${updatedRecord.uid})`,
+      details: `Agreement ${updatedRecord.agreementNumber} ${status}.${reason.trim() ? ` Reason: ${reason.trim()}` : ''}`,
+      timestamp: reviewedAt,
+    };
     setAuditLogs((previous) => [newLog, ...previous]);
     return { success: true, message: `Agreement ${status}.` };
   };

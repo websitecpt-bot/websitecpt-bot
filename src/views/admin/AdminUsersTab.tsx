@@ -78,7 +78,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
       user.email.toLowerCase().includes(q) ||
       user.uid.toLowerCase().includes(q) ||
       (user.phone || '').toLowerCase().includes(q);
-  });.sort((a, b) => {
+  }).sort((a, b) => {
     const aPinned = pinnedCustomerIds.includes(a.id);
     const bPinned = pinnedCustomerIds.includes(b.id);
     if (aPinned !== bPinned) return aPinned ? -1 : 1;

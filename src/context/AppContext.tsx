@@ -163,6 +163,7 @@ interface AppContextType {
     reason: string;
     wallet?: 'trading' | 'funding';
   }) => void;
+  adminTransferFunds: (params: { userId: string; amount: number; reason: string }) => { success: boolean; message: string };
 
   depositRequests: DepositRequest[];
   submitDepositRequest: (params: {
@@ -2188,6 +2189,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const adminTransferFunds = ({ userId, amount, reason }: { userId: string; amount: number; reason: string }) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, message: 'Customer account not found.' };
+    if (!Number.isFinite(amount) || amount <= 0) return { success: false, message: 'Enter a valid amount greater than zero.' };
+    if (target.fundingBalance < amount) return { success: false, message: `Insufficient Funding Balance. Available: ${target.fundingBalance.toFixed(2)}.` };
+    if (!reason.trim()) return { success: false, message: 'A reason is required for the audit trail.' };
+
+    const oldFunding = Number((target.fundingBalance || 0).toFixed(2));
+    const oldTrading = Number((target.tradingBalance || 0).toFixed(2));
+    const newFunding = Number((oldFunding - amount).toFixed(2));
+    const newTrading = Number((oldTrading + amount).toFixed(2));
+
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, fundingBalance: newFunding, tradingBalance: newTrading } : u));
+    updateUserBalanceInSupabase(userId, newTrading, newFunding);
+
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const entries: BalanceAdjustment[] = [
+      { id: `adj-${Date.now()}-funding`, userId, userName: target.name, amount: -amount, type: 'correction', previousBalance: oldFunding, newBalance: newFunding, reason: `[Admin Transfer: Funding → Trading] ${reason}`, adminId: 'admin-01', adminName, timestamp },
+      { id: `adj-${Date.now()}-trading`, userId, userName: target.name, amount, type: 'correction', previousBalance: oldTrading, newBalance: newTrading, reason: `[Admin Transfer: Funding → Trading] ${reason}`, adminId: 'admin-01', adminName, timestamp },
+    ];
+    setBalanceAdjustments((prev) => [...entries, ...prev]);
+    logAuditAction('ADMIN_WALLET_TRANSFER', `${target.name} (${target.uid})`, `Transferred ${amount.toFixed(2)} from Funding Wallet to Trading Wallet. Reason: ${reason}`);
+    return { success: true, message: `Transferred ${amount.toFixed(2)} from Funding to Trading for ${target.name}.` };
+  };
+
   const transferFunds = ({
     fromWallet,
     toWallet,
@@ -2365,6 +2391,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLanguage,
         balanceAdjustments,
         adjustUserBalance,
+        adminTransferFunds,
         depositRequests,
         submitDepositRequest,
         approveDeposit,

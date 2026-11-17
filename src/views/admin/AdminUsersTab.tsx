@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { User, Trade, BalanceAdjustment } from '../../types';
 import {
@@ -15,6 +15,7 @@ import {
   Plus,
   Minus,
   Wallet,
+  Pin,
 } from 'lucide-react';
 
 export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segment }) => {
@@ -32,6 +33,17 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserForHistory, setSelectedUserForHistory] = useState<User | null>(null);
+  const [pinnedCustomerIds, setPinnedCustomerIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('cpt_admin_pinned_customers') || '[]'); } catch { return []; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('cpt_admin_pinned_customers', JSON.stringify(pinnedCustomerIds)); } catch { /* ignore storage errors */ }
+  }, [pinnedCustomerIds]);
+
+  const toggleCustomerPin = (userId: string) => {
+    setPinnedCustomerIds(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [userId, ...prev]);
+  };
 
   // Quick balance adjustment modal
   const [adjustModalUser, setAdjustModalUser] = useState<User | null>(null);
@@ -66,6 +78,12 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
       user.email.toLowerCase().includes(q) ||
       user.uid.toLowerCase().includes(q) ||
       (user.phone || '').toLowerCase().includes(q);
+  }).sort((a, b) => {
+    const aPinned = pinnedCustomerIds.includes(a.id);
+    const bPinned = pinnedCustomerIds.includes(b.id);
+    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+    if (aPinned && bPinned) return pinnedCustomerIds.indexOf(a.id) - pinnedCustomerIds.indexOf(b.id);
+    return 0;
   });
 
   const openAdjustModal = (user: User, mode: 'add' | 'deduct') => {
@@ -177,7 +195,10 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
                     }`}
                   >
                     <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleCustomerPin(user.id)} title={pinnedCustomerIds.includes(user.id) ? 'Unpin customer' : 'Pin customer to top'} aria-label={pinnedCustomerIds.includes(user.id) ? 'Unpin customer' : 'Pin customer to top'} className={`shrink-0 rounded-lg p-1.5 border ${pinnedCustomerIds.includes(user.id) ? 'border-amber-400/50 bg-amber-400/10 text-amber-300' : 'border-[#2a354b] text-slate-500 hover:text-amber-300'}`}>
+                          <Pin className="w-3.5 h-3.5" />
+                        </button>
                         <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 font-bold flex items-center justify-center text-xs">
                           {user.name.charAt(0).toUpperCase()}
                         </div>

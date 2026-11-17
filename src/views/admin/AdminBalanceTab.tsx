@@ -18,6 +18,7 @@ export const AdminBalanceTab: React.FC = () => {
   const {
     users,
     adjustUserBalance,
+    adminTransferFunds,
     balanceAdjustments,
     adminName,
   } = useApp();
@@ -28,6 +29,9 @@ export const AdminBalanceTab: React.FC = () => {
   const [reason, setReason] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferMessage, setTransferMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const selectedUser = users.find((u) => u.id === selectedUserId) || users[0];
 
@@ -59,6 +63,18 @@ export const AdminBalanceTab: React.FC = () => {
 
     setAmount('');
     setReason('');
+  };
+
+  const handleAdminTransfer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    const parsedAmount = Number(transferAmount);
+    const result = adminTransferFunds({ userId: selectedUser.id, amount: parsedAmount, reason: transferReason.trim() });
+    setTransferMessage({ type: result.success ? 'success' : 'error', text: result.message });
+    if (result.success) {
+      setTransferAmount('');
+      setTransferReason('');
+    }
   };
 
   const filteredAdjustments = balanceAdjustments.filter((adj) => {
@@ -231,6 +247,28 @@ export const AdminBalanceTab: React.FC = () => {
           </form>
         </div>
       </div>
+
+      {/* Admin-only wallet transfer: Funding to Trading */}
+      <section className="bg-[#121622] border border-cyan-500/25 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+        <div>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><RotateCcw className="w-4 h-4 text-cyan-400" /> Funding → Trading Wallet Transfer</h3>
+          <p className="text-[11px] text-slate-400 mt-1">Move a customer's existing Funding balance into their Trading balance. This does not create or deposit new money.</p>
+        </div>
+        {transferMessage && <div className={`rounded-lg px-3 py-2 text-xs border ${transferMessage.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300'}`}>{transferMessage.text}</div>}
+        {selectedUser && <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg bg-[#161c2b] p-3"><span className="text-slate-400 block">Funding available</span><strong className="text-white font-mono">${selectedUser.fundingBalance.toFixed(2)}</strong></div>
+          <div className="rounded-lg bg-[#161c2b] p-3"><span className="text-slate-400 block">Trading balance</span><strong className="text-cyan-300 font-mono">${selectedUser.tradingBalance.toFixed(2)}</strong></div>
+        </div>}
+        <form onSubmit={handleAdminTransfer} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+          <label className="text-[11px] text-slate-300">Transfer amount (USD)
+            <input type="number" min="0.01" max={selectedUser?.fundingBalance || 0} step="0.01" required value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder="Amount to move" className="mt-1 w-full rounded-lg border border-[#2a354b] bg-[#161c2b] px-3 py-2.5 text-sm text-white" />
+          </label>
+          <label className="text-[11px] text-slate-300">Mandatory reason
+            <input required value={transferReason} onChange={e => setTransferReason(e.target.value)} placeholder="Reason for transfer" className="mt-1 w-full rounded-lg border border-[#2a354b] bg-[#161c2b] px-3 py-2.5 text-sm text-white" />
+          </label>
+          <button type="submit" disabled={!selectedUser || Number(transferAmount) <= 0 || Number(transferAmount) > (selectedUser?.fundingBalance || 0)} className="rounded-lg bg-cyan-400 px-4 py-2.5 text-xs font-extrabold text-slate-950 disabled:opacity-40">Transfer to Trading</button>
+        </form>
+      </section>
 
       {/* Audit History of Balance Adjustments */}
       <div className="bg-[#121622] border border-[#21293c] rounded-xl p-5 shadow-xl space-y-4">

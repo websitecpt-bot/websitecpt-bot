@@ -186,7 +186,7 @@ export const fetchUsersFromSupabase = async (): Promise<User[] | null> => {
       phone: row.phone || '',
       tradingBalance: Number(row.trading_balance ?? row.balance ?? 0),
       fundingBalance: Number(row.funding_balance ?? 0),
-      status: (row.status === 'suspended' ? 'suspended' : 'active') as 'active' | 'suspended',
+      status: (row.status === 'archived' ? 'archived' : row.status === 'suspended' ? 'suspended' : 'active') as User['status'],
       isOnline: Boolean(row.is_online ?? true),
       avatar: row.avatar || row.avatar_url || '',
       createdAt: row.created_at || new Date().toISOString(),
@@ -438,7 +438,7 @@ export const updateUserBalanceInSupabase = async (userId: string, trading: numbe
   }
 };
 
-export const updateUserStatusInSupabase = async (userId: string, status: 'active' | 'suspended') => {
+export const updateUserStatusInSupabase = async (userId: string, status: 'active' | 'suspended' | 'archived') => {
   if (!supabase) return;
   try {
     let { error } = await supabase.from('users').update({ status }).eq('id', userId);

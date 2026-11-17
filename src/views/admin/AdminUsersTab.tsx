@@ -16,9 +16,11 @@ import {
   Minus,
   Wallet,
   Pin,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 
-export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segment }) => {
+export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' | 'archived' }> = ({ segment }) => {
   const {
     users,
     updateUserStatus,
@@ -33,6 +35,8 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserForHistory, setSelectedUserForHistory] = useState<User | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<User | null>(null);
+  const [archiveReason, setArchiveReason] = useState('Customer account archived by administrator');
   const [pinnedCustomerIds, setPinnedCustomerIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cpt_admin_pinned_customers') || '[]'); } catch { return []; }
   });
@@ -67,10 +71,14 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
   };
 
   const customerUsers = users.filter((user) => !user.role || user.role === 'user');
-  const newTradersCount = customerUsers.filter(isNewTrader).length;
-  const existingCustomersCount = customerUsers.length - newTradersCount;
+  const activeCustomerUsers = customerUsers.filter((user) => user.status !== 'archived');
+  const newTradersCount = activeCustomerUsers.filter(isNewTrader).length;
+  const existingCustomersCount = activeCustomerUsers.length - newTradersCount;
+  const archivedCustomersCount = customerUsers.length - activeCustomerUsers.length;
   const filteredUsers = customerUsers.filter((user) => {
-    const isInSection = segment === 'new' ? isNewTrader(user) : !isNewTrader(user);
+    const isInSection = segment === 'archived'
+      ? user.status === 'archived'
+      : user.status !== 'archived' && (segment === 'new' ? isNewTrader(user) : !isNewTrader(user));
     if (!isInSection) return false;
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
@@ -124,7 +132,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
         <div className="flex items-center gap-3">
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>{segment === 'new' ? 'New User Accounts' : 'Existing Customers'} ({filteredUsers.length})</span>
+              <span>{segment === 'new' ? 'New User Accounts' : segment === 'archived' ? 'Archived Customers' : 'Existing Customers'} ({filteredUsers.length})</span>
               {segment === 'new' && newTradersCount > 0 && (
                 <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full animate-pulse">
                   {newTradersCount} NEW
@@ -134,7 +142,9 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
             <p className="text-[10px] sm:text-xs text-slate-400">
               {segment === 'new'
                 ? 'Accounts registered in the last 48 hours.'
-                : 'Earlier customer accounts, profiles, transactions and management.'}
+                : segment === 'archived'
+                  ? 'Archived accounts are hidden from normal customer lists. Restore to re-enable sign-in.'
+                  : 'Earlier customer accounts, profiles, transactions and management.'}
             </p>
           </div>
         </div>
@@ -145,7 +155,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
               : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
           }`}>
-            {segment === 'new' ? `New · ${newTradersCount} (48h)` : `Existing · ${existingCustomersCount}`}
+            {segment === 'new' ? `New · ${newTradersCount} (48h)` : segment === 'archived' ? `Archived · ${archivedCustomersCount}` : `Existing · ${existingCustomersCount}`}
           </span>
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -180,7 +190,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
             <tbody className="divide-y divide-[#1b2234]">
               {filteredUsers.length === 0 && (
                 <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-500">
-                  {segment === 'new' ? 'No customer registrations in the last 48 hours.' : 'No existing customers match this search.'}
+                  {segment === 'new' ? 'No customer registrations in the last 48 hours.' : segment === 'archived' ? 'No archived customers.' : 'No existing customers match this search.'}
                 </td></tr>
               )}
               {filteredUsers.map((user) => {
@@ -249,7 +259,9 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
                         className={`text-[10px] font-bold px-2 py-0.5 rounded capitalize ${
                           user.status === 'active'
                             ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                            : user.status === 'archived'
+                              ? 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
+                              : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                         }`}
                       >
                         {user.status}
@@ -306,7 +318,15 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
                         </button>
 
                         {/* Suspend / Activate */}
-                        {user.status === 'active' ? (
+                        {user.status === 'archived' ? (
+                          <button
+                            onClick={() => updateUserStatus(user.id, 'active', 'Customer account restored from archive')}
+                            className="bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors"
+                            title="Restore archived customer account"
+                          >
+                            <span className="inline-flex items-center gap-1"><ArchiveRestore className="w-3 h-3" /> Restore</span>
+                          </button>
+                        ) : user.status === 'active' ? (
                           <button
                             onClick={() => updateUserStatus(user.id, 'suspended')}
                             className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors"
@@ -321,6 +341,17 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
                             title="Unblock User"
                           >
                             Activate
+                          </button>
+                        )}
+                        {user.status !== 'archived' && (
+                          <button
+                            type="button"
+                            disabled={userTrades.some((trade) => trade.status === 'OPEN')}
+                            onClick={() => { setArchiveTarget(user); setArchiveReason('Customer account archived by administrator'); }}
+                            className="bg-violet-500/10 hover:bg-violet-500/20 disabled:opacity-30 disabled:cursor-not-allowed text-violet-300 border border-violet-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors"
+                            title={userTrades.some((trade) => trade.status === 'OPEN') ? 'Close all open trades before archiving' : 'Archive this customer without deleting history'}
+                          >
+                            Archive
                           </button>
                         )}
                       </div>
@@ -556,6 +587,49 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' }> = ({ segme
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reversible customer archive confirmation */}
+      {archiveTarget && (
+        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md rounded-2xl border border-violet-500/30 bg-[#111522] p-4 sm:p-5 shadow-2xl">
+            <div className="flex items-center gap-2 text-violet-300">
+              <Archive className="h-5 w-5" />
+              <h3 className="text-sm font-bold text-white">Archive Customer Account</h3>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-slate-300">
+              Archive <strong className="text-white">{archiveTarget.name}</strong> (UID {archiveTarget.uid})? They will no longer be able to sign in. Trade, balance, withdrawal, deposit and support history will be retained. You can restore this account later.
+            </p>
+            <label className="mt-4 block text-[11px] font-semibold text-slate-300">
+              Mandatory archive reason
+              <textarea
+                rows={2}
+                value={archiveReason}
+                onChange={(event) => setArchiveReason(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-[#2b354b] bg-[#171f2e] p-2.5 text-xs text-white outline-none focus:border-violet-400"
+                placeholder="Why is this account being archived?"
+              />
+            </label>
+            {trades.some((trade) => trade.userId === archiveTarget.id && trade.status === 'OPEN') && (
+              <p className="mt-2 text-[10px] text-rose-300">This customer has an open trade. Close it before archiving.</p>
+            )}
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setArchiveTarget(null)} className="flex-1 rounded-lg border border-[#303b52] bg-[#1b2333] px-3 py-2.5 text-xs font-semibold text-slate-200">Cancel</button>
+              <button
+                type="button"
+                disabled={!archiveReason.trim() || trades.some((trade) => trade.userId === archiveTarget.id && trade.status === 'OPEN')}
+                onClick={() => {
+                  updateUserStatus(archiveTarget.id, 'archived', archiveReason.trim());
+                  setArchiveTarget(null);
+                  setArchiveReason('');
+                }}
+                className="flex-1 rounded-lg bg-violet-500 px-3 py-2.5 text-xs font-extrabold text-white disabled:opacity-40"
+              >
+                Confirm Archive
+              </button>
             </div>
           </div>
         </div>

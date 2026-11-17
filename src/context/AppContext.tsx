@@ -62,7 +62,7 @@ interface AppContextType {
   users: User[];
   currentUser: User;
   switchUser: (userId: string) => void;
-  updateUserStatus: (userId: string, status: 'active' | 'suspended') => void;
+  updateUserStatus: (userId: string, status: 'active' | 'suspended' | 'archived', reason?: string) => void;
   isUserLoggedIn: boolean;
   isSuperAdmin: boolean;
   loginUser: (identifier: string, password?: string) => Promise<{ success: boolean; message: string }>;
@@ -1059,6 +1059,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (found.status === 'suspended') {
       return { success: false, message: 'This account has been suspended by the administrator.' };
     }
+    if (found.status === 'archived') {
+      return { success: false, message: 'This account has been archived. Please contact Support for assistance.' };
+    }
 
     // Verify password:
     if (password) {
@@ -1097,6 +1100,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.history.pushState({}, '', '/login');
     }
   };
+
+  useEffect(() => {
+    if (isUserLoggedIn && currentUser?.status === 'archived') {
+      logoutUser();
+    }
+  }, [isUserLoggedIn, currentUser?.status]);
 
   const updateUserAvatar = (avatarUrl: string) => {
     setUsers((prev) => {
@@ -1155,17 +1164,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const updateUserStatus = (userId: string, status: 'active' | 'suspended') => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, status } : u))
-    );
-    updateUserStatusInSupabase(userId, status);
-    const targetUser = users.find((u) => u.id === userId);
-    logAuditAction(
-      status === 'suspended' ? 'USER_SUSPENDED' : 'USER_ACTIVATED',
-      `${targetUser?.name || 'User'} (${targetUser?.uid})`,
-      `Account marked as ${status} by Admin.`
-    );
+  const updateUserStatus = (userId: string, status: 'active' | 'suspended' | 'archived', reason?: string) => {
+    const targetUser = users.find((user) => user.id === userId);
+    if (!targetUser) return;
+    if (status === 'archived' && trades.some((trade) => trade.userId === userId && trade.status === 'OPEN')) {
+      console.warn('[Customer archive] Close all open trades before archiving this account.');
+      return;
+    }
+
+    setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, status } : user));
+    void updateUserStatusInSupabase(userId, status);
+    const action = status === 'archived'
+      ? 'USER_ARCHIVED'
+      : status === 'suspended'
+        ? 'USER_SUSPENDED'
+        : 'USER_ACTIVATED';
+    const details = status === 'archived'
+      ? `Account archived (soft delete). All customer, trade, and financial history retained. Reason: ${reason?.trim() || 'Archived by administrator'}.`
+      : `Account marked as ${status} by Admin. ${reason?.trim() || ''}`.trim();
+    logAuditAction(action, `${targetUser.name} (${targetUser.uid})`, details);
   };
 
   const updateCoinSettings = (symbol: string, updates: Partial<MarketCoin>) => {
@@ -1266,6 +1283,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }) => {
     if (currentUser.status === 'suspended') {
       return { success: false, message: 'Your account is suspended. Please contact Support.' };
+    }
+    if (currentUser.status === 'archived') {
+      return { success: false, message: 'This account has been archived. Please contact Support.' };
     }
 
     const positionSize = margin * leverage;

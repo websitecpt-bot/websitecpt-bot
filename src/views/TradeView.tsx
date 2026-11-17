@@ -398,12 +398,12 @@ export const TradeView: React.FC = () => {
                   </div>
 
                   <div className="flex flex-col items-end gap-1.5 w-full sm:w-auto">
-                    <div className="flex items-center justify-end gap-2" aria-label="Floating PnL live indicator">
+                    <div className="flex items-center justify-end gap-2" aria-label={t.pnl >= 0 ? "Floating PnL positive" : "Floating PnL negative"}>
                       <span className="text-xs font-semibold text-slate-300">Floating PnL</span>
-                      <span className="inline-flex items-center gap-1.5" aria-hidden="true">
-                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-floating-dot-red" />
-                        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-floating-dot-green" />
-                      </span>
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full animate-pulse ${t.pnl >= 0 ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.75)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.75)]'}`}
+                        aria-hidden="true"
+                      />
                     </div>
 
                     <div className="flex items-center gap-2.5">

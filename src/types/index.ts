@@ -1,4 +1,4 @@
-export type UserStatus = 'active' | 'suspended';
+export type UserStatus = 'active' | 'suspended' | 'archived';
 
 export interface User {
   id: string;

@@ -78,6 +78,7 @@ export const TradeView: React.FC = () => {
     trades,
     closeTrade,
     setSelectedTradeDetails,
+    setIsTransferModalOpen,
   } = useApp();
 
   const [leverageInput, setLeverageInput] = useState<string>('10');
@@ -302,23 +303,39 @@ export const TradeView: React.FC = () => {
         {/* Order Notification message */}
         {orderNotification && (
           <div
-            className={`p-3 rounded-xl mb-4 text-xs flex items-center justify-between ${
+            className={`p-3 rounded-xl mb-4 text-xs flex flex-col gap-2 ${
               orderNotification.type === 'success'
                 ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
                 : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
             }`}
           >
-            <div className="flex items-center gap-2">
-              {orderNotification.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              )}
-              <span>{orderNotification.message}</span>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-start gap-2">
+                {orderNotification.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <span>{orderNotification.message}</span>
+              </div>
+              <button onClick={() => setOrderNotification(null)} aria-label="Dismiss notification" className="shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <button onClick={() => setOrderNotification(null)}>
-              <X className="w-3.5 h-3.5" />
-            </button>
+            {orderNotification.type === 'error' && orderNotification.message.toLowerCase().includes('insufficient trading balance') && (
+              <div className="ml-6 flex flex-col gap-1.5">
+                <p className="text-[10px] leading-relaxed text-rose-200/80">
+                  Trading Wallet: ${currentUser.tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. Move funds from Funding Wallet to Trading Wallet to place this order.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsTransferModalOpen(true)}
+                  className="self-start rounded-lg border border-amber-400/40 bg-amber-400 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 transition-colors hover:bg-amber-300"
+                >
+                  Transfer to Trading Wallet
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -107,7 +107,7 @@ export const HomeView: React.FC = () => {
           <div>
             <span className="text-[9px] sm:text-xs text-slate-400 block leading-tight">{t.tradingWallet}</span>
             <span className="mt-0.5 block min-w-0 break-all font-mono text-[10px] sm:text-xs font-semibold text-amber-400">
-              {showBalance ? `$${currentUser.tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '••••'}
+              {showBalance ? `$${displayTradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '••••'}
             </span>
           </div>
           <div>

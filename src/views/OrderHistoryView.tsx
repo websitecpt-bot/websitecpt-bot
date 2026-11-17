@@ -31,20 +31,20 @@ export const OrderHistoryView: React.FC = () => {
       <div className="flex border-b border-[#21283a] text-sm font-semibold">
         <button
           onClick={() => setActiveTab('active')}
-          className={`flex-1 py-3 text-center border-b-2 transition-all cursor-pointer ${
+          className={`rounded-lg py-2.5 sm:py-3 text-center transition-all cursor-pointer ${
             activeTab === 'active'
-              ? 'border-amber-400 text-amber-400 font-bold'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? 'bg-amber-400/10 text-amber-300 font-bold shadow-inner shadow-amber-400/5'
+              : 'text-slate-400 hover:bg-[#1a2334] hover:text-slate-200'
           }`}
         >
           Active Trades ({activeTradesList.length})
         </button>
         <button
           onClick={() => setActiveTab('completed')}
-          className={`flex-1 py-3 text-center border-b-2 transition-all cursor-pointer ${
+          className={`rounded-lg py-2.5 sm:py-3 text-center transition-all cursor-pointer ${
             activeTab === 'completed'
-              ? 'border-amber-400 text-amber-400 font-bold'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? 'bg-amber-400/10 text-amber-300 font-bold shadow-inner shadow-amber-400/5'
+              : 'text-slate-400 hover:bg-[#1a2334] hover:text-slate-200'
           }`}
         >
           Completed ({completedTradesList.length})
@@ -65,7 +65,7 @@ export const OrderHistoryView: React.FC = () => {
                 <div
                   key={trade.id}
                   onClick={() => setDetailModalTrade(trade)}
-                  className="bg-[#10141f] hover:bg-[#151a28] border border-[#1d2436] rounded-xl p-4 flex items-center justify-between cursor-pointer transition-colors"
+                  className="bg-gradient-to-br from-[#151c2a] to-[#0f1420] hover:from-[#192235] hover:to-[#111827] border border-[#2a354c] rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 cursor-pointer transition-all shadow-lg shadow-black/10"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -122,7 +122,7 @@ export const OrderHistoryView: React.FC = () => {
               <div
                 key={trade.id}
                 onClick={() => setDetailModalTrade(trade)}
-                className="bg-[#10141f] hover:bg-[#161c2b] border border-[#1e2538] hover:border-[#2d3752] rounded-xl p-4 flex items-center justify-between cursor-pointer transition-all"
+                className="bg-gradient-to-br from-[#151c2a] to-[#0f1420] hover:from-[#192235] hover:to-[#111827] border border-[#2a354c] hover:border-[#3b4b67] rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 cursor-pointer transition-all shadow-lg shadow-black/10"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">

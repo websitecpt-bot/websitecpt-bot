@@ -265,16 +265,42 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
 export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null> => {
   if (!supabase) return null;
   try {
-    let res = await supabase.from('support_tickets').select('*');
-    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
-      res = await supabase.from('support_messages').select('*');
+    const pageSize = 10;
+    const allRows: any[] = [];
+    let offset = 0;
+    let sourceTable: 'support_tickets' | 'support_messages' = 'support_tickets';
+
+    // Load a small page at a time. support_tickets contains JSONB message histories
+    // (including attachments); one giant select previously timed out and hid every
+    // new customer message from Admin.
+    while (offset < 500) {
+      let res = await supabase
+        .from(sourceTable)
+        .select('*')
+        .order('last_message_time', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+      if (res.error && offset === 0 && sourceTable === 'support_tickets' &&
+          (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
+        sourceTable = 'support_messages';
+        res = await supabase
+          .from(sourceTable)
+          .select('*')
+          .order('last_message_time', { ascending: false })
+          .range(offset, offset + pageSize - 1);
+      }
+
+      if (res.error) {
+        console.warn('[Supabase fetchTickets] page error:', res.error.message, { offset, sourceTable });
+        return null;
+      }
+      const page = res.data || [];
+      allRows.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
     }
-    if (res.error) {
-      console.warn('[Supabase fetchTickets] error:', res.error.message);
-      return null;
-    }
-    if (!res.data) return null;
-    return res.data.map((row: any) => ({
+
+    return allRows.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
       userName: row.user_name,
@@ -423,30 +449,42 @@ export const syncUserToSupabase = async (user: User): Promise<{ success: boolean
   }
 };
 
-export const updateUserBalanceInSupabase = async (userId: string, trading: number, funding: number) => {
-  if (!supabase) return;
+export const updateUserBalanceInSupabase = async (
+  userId: string,
+  trading: number,
+  funding: number
+): Promise<{ success: boolean; error?: string }> => {
+  if (!supabase) return { success: false, error: 'Supabase is not configured' };
   try {
-    const payload: Record<string, any> = {
-      trading_balance: trading,
-      funding_balance: funding,
-    };
-
-    let res = await supabase.from('users').update(payload).eq('id', userId);
-
-    // Also update by uid in case client passed uid or table uses uid
-    await supabase.from('users').update(payload).eq('uid', userId);
-
-    if (res.error && res.error.message?.includes('trading_balance')) {
-      const alt = { balance: trading, funding_balance: funding };
-      await supabase.from('users').update(alt).eq('id', userId);
-      await supabase.from('users').update(alt).eq('uid', userId);
+    const payload = { trading_balance: trading, funding_balance: funding };
+    // Update by the exact customer row ID first and verify that a row was changed.
+    const byId = await supabase
+      .from('users')
+      .update(payload)
+      .eq('id', userId)
+      .select('id');
+    if (byId.error) {
+      console.error('[Supabase balance] update by id failed:', byId.error.message);
+      return { success: false, error: byId.error.message };
     }
+    if (byId.data && byId.data.length > 0) return { success: true };
 
-    if (res.error && (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
-      await supabase.from('profiles').update(payload).eq('id', userId);
+    // Compatibility for callers that supply the customer's UID rather than row ID.
+    const byUid = await supabase
+      .from('users')
+      .update(payload)
+      .eq('uid', userId)
+      .select('id');
+    if (byUid.error) {
+      console.error('[Supabase balance] update by UID failed:', byUid.error.message);
+      return { success: false, error: byUid.error.message };
     }
-  } catch (err) {
-    console.warn('Supabase updateUserBalance notice:', err);
+    if (byUid.data && byUid.data.length > 0) return { success: true };
+
+    return { success: false, error: `No customer row matched ID/UID ${userId}` };
+  } catch (err: any) {
+    console.error('[Supabase balance] unexpected error:', err);
+    return { success: false, error: err?.message || 'Unable to save customer balance' };
   }
 };
 

@@ -595,10 +595,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Central Supabase Cloud Sync & Realtime Listener
-  const hydrateFromSupabase = async () => {
+  const hydrateFromSupabase = async (includeTickets = true) => {
     if (!isSupabaseConfigured()) return;
     try {
-      const [cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals, cloudAudit] = await Promise.all([
+      // Keep one slow/large support-chat response from blocking customer, trade,
+      // deposit, withdrawal and audit refreshes.
+      const results = await Promise.allSettled([
+        fetchUsersFromSupabase(),
+        fetchTradesFromSupabase(),
+        includeTickets ? fetchTicketsFromSupabase() : Promise.resolve(null),
+        fetchDepositsFromSupabase(),
+        fetchWithdrawalsFromSupabase(),
+        fetchAuditLogsFromSupabase(),
+      ]);
+      const cloudUsers = results[0].status === 'fulfilled' ? results[0].value : null;
+      const cloudTrades = results[1].status === 'fulfilled' ? results[1].value : null;
+      const cloudTickets = results[2].status === 'fulfilled' ? results[2].value : null;
+      const cloudDeposits = results[3].status === 'fulfilled' ? results[3].value : null;
+      const cloudWithdrawals = results[4].status === 'fulfilled' ? results[4].value : null;
+      const cloudAudit = results[5].status === 'fulfilled' ? results[5].value : null;
         fetchUsersFromSupabase(),
         fetchTradesFromSupabase(),
         fetchTicketsFromSupabase(),
@@ -718,16 +733,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     });
 
-    // Auto-polling interval every 4 seconds to guarantee live updates without manual page refresh
+    // Poll core account/trading/finance data without repeatedly loading large chat histories.
+    // Support tickets are fetched separately at a lower frequency; Realtime still refreshes them instantly.
     const pollTimer = setInterval(() => {
-      if (isMounted) {
-        hydrateFromSupabase();
+      if (isMounted) hydrateFromSupabase(false);
+    }, 10000);
+    const ticketPollTimer = setInterval(async () => {
+      if (!isMounted) return;
+      const tickets = await fetchTicketsFromSupabase();
+      if (tickets && isMounted) {
+        setSupportTickets((prev) => mergeIncomingTickets(prev, tickets));
       }
-    }, 4000);
+    }, 30000);
 
     return () => {
       isMounted = false;
       clearInterval(pollTimer);
+      clearInterval(ticketPollTimer);
       if (channel) {
         channel.unsubscribe();
       }

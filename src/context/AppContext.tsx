@@ -595,13 +595,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Central Supabase Cloud Sync & Realtime Listener
-  const hydrateFromSupabase = async () => {
+  const hydrateFromSupabase = async (includeTickets = true) => {
     if (!isSupabaseConfigured()) return;
     try {
+      // Support chat history is fetched less often because message JSON can be large.
+      // A slow chat query must not delay refreshes for customer accounts and trading.
       const [cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals, cloudAudit] = await Promise.all([
         fetchUsersFromSupabase(),
         fetchTradesFromSupabase(),
-        fetchTicketsFromSupabase(),
+        includeTickets ? fetchTicketsFromSupabase() : Promise.resolve(null),
         fetchDepositsFromSupabase(),
         fetchWithdrawalsFromSupabase(),
         fetchAuditLogsFromSupabase(),
@@ -718,16 +720,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     });
 
-    // Auto-polling interval every 4 seconds to guarantee live updates without manual page refresh
+    // Poll core account/trading/finance data without repeatedly loading large chat histories.
+    // Support tickets are fetched separately at a lower frequency; Realtime still refreshes them instantly.
     const pollTimer = setInterval(() => {
-      if (isMounted) {
-        hydrateFromSupabase();
+      if (isMounted) hydrateFromSupabase(false);
+    }, 10000);
+    const ticketPollTimer = setInterval(async () => {
+      if (!isMounted) return;
+      const tickets = await fetchTicketsFromSupabase();
+      if (tickets && isMounted) {
+        setSupportTickets((prev) => mergeIncomingTickets(prev, tickets));
       }
-    }, 4000);
+    }, 30000);
 
     return () => {
       isMounted = false;
       clearInterval(pollTimer);
+      clearInterval(ticketPollTimer);
       if (channel) {
         channel.unsubscribe();
       }

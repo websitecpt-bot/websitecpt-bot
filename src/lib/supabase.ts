@@ -3,27 +3,39 @@ import { User, Trade, SupportTicket, DepositRequest, WithdrawalRequest, AuditLog
 
 // Read public credentials from Vite environment variables (Never service-role key!)
 const getSupabaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('cpt_supabase_url');
-    if (saved) return saved.trim();
-  }
-  return (
+  const sharedDeploymentUrl = (
     import.meta.env.VITE_SUPABASE_URL ||
     (typeof window !== 'undefined' && (window as any).__VITE_SUPABASE_URL) ||
     ''
   ).trim();
+
+  // Production must use the single Vercel deployment configuration on every device.
+  // A localStorage override can silently send one customer's browser to another project,
+  // splitting accounts, balances and activity between unrelated databases.
+  if (import.meta.env.PROD) return sharedDeploymentUrl;
+
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('cpt_supabase_url');
+    if (saved) return saved.trim();
+  }
+  return sharedDeploymentUrl;
 };
 
 const getSupabaseAnonKey = (): string => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('cpt_supabase_key');
-    if (saved) return saved.trim();
-  }
-  return (
+  const sharedDeploymentKey = (
     import.meta.env.VITE_SUPABASE_ANON_KEY ||
     (typeof window !== 'undefined' && (window as any).__VITE_SUPABASE_ANON_KEY) ||
     ''
   ).trim();
+
+  // Match the URL behavior: production credentials come from the shared deployment only.
+  if (import.meta.env.PROD) return sharedDeploymentKey;
+
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('cpt_supabase_key');
+    if (saved) return saved.trim();
+  }
+  return sharedDeploymentKey;
 };
 
 export const setCustomSupabaseCredentials = (url: string, key: string) => {

@@ -85,22 +85,20 @@ export const SupportModal: React.FC = () => {
 
   if (!isSupportOpen) return null;
 
-  const handleStartLiveChat = () => {
+  const handleStartLiveChat = async () => {
     if (openTicket && !isCurrentSessionClosed) {
       setSelectedSessionTicketId(openTicket.id);
       setActiveView('chat');
-    } else {
-      startNewSupportChat(currentUser.id);
-      setTimeout(() => {
-        const latest = supportTickets.find(
-          (t) => t.userId === currentUser.id && !t.isSessionClosed && t.status !== 'closed'
-        );
-        if (latest) {
-          setSelectedSessionTicketId(latest.id);
-        }
-        setActiveView('chat');
-      }, 80);
+      return;
     }
+
+    const result = await startNewSupportChat(currentUser.id);
+    if (!result.success || !result.ticketId) {
+      window.alert(result.message);
+      return;
+    }
+    setSelectedSessionTicketId(result.ticketId);
+    setActiveView('chat');
   };
 
   const handleOpenClosedSession = (ticketId: string) => {

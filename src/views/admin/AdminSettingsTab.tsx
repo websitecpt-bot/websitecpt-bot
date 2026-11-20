@@ -8,7 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
-import { isSupabaseConfigured } from '../../lib/supabase';
+import { getSupabaseConfigStatus } from '../../lib/supabase';
 
 export const AdminSettingsTab: React.FC = () => {
   const { systemSettings, updateSystemSettings, resetAllData } = useApp();
@@ -22,6 +22,7 @@ export const AdminSettingsTab: React.FC = () => {
   const [minWithdrawal, setMinWithdrawal] = useState(systemSettings.minWithdrawal.toString());
   const [maintenanceMode, setMaintenanceMode] = useState(systemSettings.maintenanceMode);
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
+  const supabaseConfig = getSupabaseConfigStatus();
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,76 +225,60 @@ export const AdminSettingsTab: React.FC = () => {
         </div>
       </form>
 
-      {/* Cloud Database (Supabase) Connection Management */}
+      {/* Shared Cloud Database Configuration */}
       <div className="bg-[#121622] border border-[#21293c] rounded-2xl p-6 shadow-xl space-y-4 text-xs">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-cyan-400" />
-              <span>Supabase Cloud Database Connection (Multi-Device Sync)</span>
+              <span>Shared Supabase Database</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Sync all registered users, trades, deposits, and balances across all mobile devices and desktop computers worldwide.
+              All customer devices and Admin must use the same Vercel deployment database configuration.
             </p>
           </div>
-          <span
-            className={`px-2.5 py-1 rounded-full text-[10px] font-mono border ${
-              isSupabaseConfigured()
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-            }`}
-          >
-            {isSupabaseConfigured() ? '• Cloud Connected' : '• Pending Configuration'}
+          <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono border ${
+            supabaseConfig.isConfigured
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+          }`}>
+            {supabaseConfig.isConfigured ? 'SHARED CONFIG FOUND' : 'VERCEL CONFIG MISSING'}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-          <div>
-            <label className="text-slate-300 font-medium block mb-1">Supabase Project URL</label>
-            <input
-              type="text"
-              placeholder="https://xyzcompany.supabase.co"
-              defaultValue={typeof window !== 'undefined' ? localStorage.getItem('cpt_supabase_url') || import.meta.env.VITE_SUPABASE_URL || '' : ''}
-              id="cpt_sb_url_input"
-              className="w-full bg-[#161c2a] border border-[#242e44] focus:border-cyan-400 rounded-xl px-4 py-2 text-white font-mono text-xs outline-none"
-            />
+        <div className="rounded-xl border border-[#253149] bg-[#0d1421] p-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-slate-400">Shared project URL</span>
+            <span className="font-mono text-cyan-300 break-all">{supabaseConfig.urlPreview}</span>
           </div>
-
-          <div>
-            <label className="text-slate-300 font-medium block mb-1">Supabase Public Anon Key</label>
-            <input
-              type="password"
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              defaultValue={typeof window !== 'undefined' ? localStorage.getItem('cpt_supabase_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || '' : ''}
-              id="cpt_sb_key_input"
-              className="w-full bg-[#161c2a] border border-[#242e44] focus:border-cyan-400 rounded-xl px-4 py-2 text-white font-mono text-xs outline-none"
-            />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-slate-400">Connection source</span>
+            <span className="font-semibold text-white">Vercel Environment Variables</span>
+          </div>
+          <div className="text-[10px] leading-relaxed text-slate-500">
+            Production no longer uses browser-specific Supabase URL or key values. This prevents one device from saving customer activity to a different database from the other devices.
           </div>
         </div>
 
-        <div className="flex justify-end pt-2">
+        {!supabaseConfig.isConfigured && (
+          <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-[11px] leading-relaxed text-rose-200">
+            The shared production configuration is missing. In Vercel, verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set for Production, then redeploy. Do not enter a separate database on an individual device.
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[10px] text-slate-500">This action only clears old browser-specific connection overrides. It does not clear customer accounts, balances, trades, chats or any database records.</p>
           <button
             type="button"
             onClick={() => {
-              const urlEl = document.getElementById('cpt_sb_url_input') as HTMLInputElement | null;
-              const keyEl = document.getElementById('cpt_sb_key_input') as HTMLInputElement | null;
-              const url = urlEl?.value?.trim() || '';
-              const key = keyEl?.value?.trim() || '';
-              if (url && key) {
-                localStorage.setItem('cpt_supabase_url', url);
-                localStorage.setItem('cpt_supabase_key', key);
-                setSavedFeedback('Supabase credentials saved. Reloading app to connect...');
-                setTimeout(() => window.location.reload(), 800);
-              } else {
-                localStorage.removeItem('cpt_supabase_url');
-                localStorage.removeItem('cpt_supabase_key');
-                setSavedFeedback('Custom credentials cleared.');
-                setTimeout(() => window.location.reload(), 800);
-              }
+              localStorage.removeItem('cpt_supabase_url');
+              localStorage.removeItem('cpt_supabase_key');
+              setSavedFeedback('Old browser-specific database overrides cleared. Reloading with the shared Vercel configuration...');
+              setTimeout(() => window.location.reload(), 800);
             }}
-            className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold px-4 py-2 rounded-xl transition-colors cursor-pointer"
+            className="shrink-0 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/20"
           >
-            Save & Connect Database
+            Use Shared Database
           </button>
         </div>
       </div>

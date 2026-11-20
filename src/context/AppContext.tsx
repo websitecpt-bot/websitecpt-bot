@@ -141,12 +141,12 @@ interface AppContextType {
     ticketId: string,
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ) => void;
+  ) => Promise<{ success: boolean; message: string }>;
   addSupportSystemNotification: (ticketId: string, text: string) => void;
   updateTicketStatus: (ticketId: string, status: TicketStatus) => void;
   closeSupportSession: (ticketId: string) => void;
   reopenSupportSession: (ticketId: string) => void;
-  startNewSupportChat: (userId?: string) => void;
+  startNewSupportChat: (userId?: string) => Promise<{ success: boolean; message: string; ticketId?: string }>;
   deleteSupportTicket: (ticketId: string) => void;
   editSupportMessage: (ticketId: string, messageId: string, newText: string) => void;
   deleteSupportMessageForEveryone: (ticketId: string, messageId: string) => void;
@@ -1023,6 +1023,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     password?: string;
     referralCode?: string;
   }) => {
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'The shared customer database is unavailable. Your account was not created. Please contact Support.' };
+    }
+
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
     const cleanRef = (referralCode || '').trim();
@@ -1092,9 +1096,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               message: 'This email is already registered. Please sign in with your password.',
             };
           }
-          console.warn('[Supabase Auth notice]', authError.message);
-        } else if (authData?.user?.id) {
+          console.error('[Supabase Auth SignUp failed]', authError.message);
+          return { success: false, message: `Account creation failed: ${authError.message}` };
+        }
+        if (authData?.user?.id) {
           authenticatedUserId = authData.user.id;
+        } else {
+          return { success: false, message: 'Supabase did not confirm the new account. Please try again.' };
         }
       } catch (authErr) {
         console.warn('[Supabase Auth SignUp notice]', authErr);
@@ -1121,12 +1129,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastLogin: nowStr,
     };
 
-    // If Supabase is active, sync user profile to cloud table
+    // Save the customer profile first. Never create a local-only account in production.
     if (isSupabaseConfigured()) {
-      try {
-        await syncUserToSupabase(newUser);
-      } catch (err) {
-        console.warn('[Supabase Profile Sync notice]', err);
+      const profileSave = await syncUserToSupabase(newUser);
+      if (!profileSave.success) {
+        console.error('[Supabase Profile Sync failed]', profileSave.error);
+        return {
+          success: false,
+          message: `Account authentication was created, but its customer profile could not be saved to the shared database. Do not register again; contact Admin. ${profileSave.error || ''}`.trim(),
+        };
       }
     }
 
@@ -1155,9 +1166,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
       ],
     };
-    setSupportTickets((prev) => [welcomeTicket, ...prev]);
+    let welcomeTicketSaved = !isSupabaseConfigured();
     if (isSupabaseConfigured()) {
-      syncTicketToSupabase(welcomeTicket);
+      const ticketSave = await syncTicketToSupabase(welcomeTicket);
+      welcomeTicketSaved = ticketSave.success;
+      if (!ticketSave.success) {
+        console.error('[Registration welcome ticket sync failed]', ticketSave.error);
+      }
+    }
+    if (welcomeTicketSaved) {
+      setSupportTickets((prev) => [welcomeTicket, ...prev]);
     }
 
     logAuditAction(
@@ -1168,7 +1186,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Account created successfully! Welcome UID: ${uid} (Invited by ${referrer.name})`,
+      message: welcomeTicketSaved
+        ? `Account created successfully! Welcome UID: ${uid} (Invited by ${referrer.name})`
+        : `Account created successfully! UID: ${uid}. Your welcome message could not sync, but you can still contact Support after login.`,
       user: newUser,
     };
   };
@@ -1722,16 +1742,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Message sent successfully.' };
   };
 
-  const startNewSupportChat = (userId?: string) => {
+  const startNewSupportChat = async (userId?: string): Promise<{ success: boolean; message: string; ticketId?: string }> => {
     const targetId = userId || currentUser.id;
     const targetUser = users.find((u) => u.id === targetId) || currentUser;
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'Support cloud connection is unavailable. A new chat was not opened.' };
+    }
+
     const nowStr = new Date().toISOString();
-
-    const userSessionCount = supportTickets.filter((t) => t.userId === targetId).length;
-    const sessionNum = 240 + userSessionCount + 1;
-
+    const userTickets = supportTickets.filter((t) => t.userId === targetId);
+    const sessionNum = 240 + userTickets.length + 1;
     const newTicket: SupportTicket = {
-      id: `ticket-${Date.now()}`,
+      id: `ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       userId: targetUser.id,
       userName: targetUser.name,
       userEmail: targetUser.email,
@@ -1745,24 +1767,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       messages: [],
     };
 
-    // Close any older open session for this user so only 1 session is active at a time
+    const previouslyOpen = userTickets.filter((t) => !t.isSessionClosed && t.status !== 'closed');
+    if (isSupabaseConfigured()) {
+      const saves = await Promise.all([
+        ...previouslyOpen.map((ticket) =>
+          syncTicketToSupabase({ ...ticket, status: 'closed', isSessionClosed: true })
+        ),
+        syncTicketToSupabase(newTicket),
+      ]);
+      const failed = saves.find((result) => !result.success);
+      if (failed) {
+        console.error('[Support] New session cloud save failed:', failed.error);
+        return { success: false, message: `A new chat could not be saved. ${failed.error || ''}`.trim() };
+      }
+    }
+
     setSupportTickets((prev) => {
-      const updated = prev.map((t) =>
-        t.userId === targetId && !t.isSessionClosed && t.status !== 'closed'
-          ? { ...t, isSessionClosed: true, status: 'closed' as TicketStatus }
-          : t
+      const updated = prev.map((ticket) =>
+        ticket.userId === targetId && !ticket.isSessionClosed && ticket.status !== 'closed'
+          ? { ...ticket, isSessionClosed: true, status: 'closed' as TicketStatus }
+          : ticket
       );
       return [newTicket, ...updated];
     });
-    if (isSupabaseConfigured()) {
-      syncTicketToSupabase(newTicket).catch((e) => console.warn('New ticket sync notice:', e));
-    }
 
     logAuditAction(
       'NEW_SUPPORT_TICKET_STARTED',
       `${targetUser.name} (${targetUser.uid})`,
       'New support session thread started by user.'
     );
+    return { success: true, message: 'Support chat opened.', ticketId: newTicket.id };
   };
 
   const closeSupportSession = (ticketId: string) => {
@@ -1862,12 +1896,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const sendAdminReply = (
+  const sendAdminReply = async (
     ticketId: string,
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ) => {
-    if (!text.trim() && !attachment) return;
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!text.trim() && !attachment) return { success: false, message: 'Enter a reply or attach a file.' };
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'Support cloud connection is unavailable. The reply was not sent.' };
+    }
+
+    const ticket = supportTickets.find((item) => item.id === ticketId);
+    if (!ticket) {
+      console.error('[Support] Cannot reply: selected ticket was not found.', ticketId);
+      return { success: false, message: 'Selected support conversation was not found. Refresh the Inbox and try again.' };
+    }
+
     const nowStr = new Date().toISOString();
     const displaySummary = text.trim() || (attachment ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}` : '');
     const newMsg: SupportMessage = {
@@ -1881,13 +1925,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachmentName: attachment?.name,
       attachmentType: attachment?.type,
     };
-
-    // Resolve the exact conversation only. Never send a reply to an unrelated first ticket.
-    const ticket = supportTickets.find((t) => t.id === ticketId || t.userId === ticketId);
-    if (!ticket) {
-      console.error('[Support] Cannot reply: selected ticket was not found.', ticketId);
-      return;
-    }
     const updatedTicket: SupportTicket = {
       ...ticket,
       status: 'answered',
@@ -1898,21 +1935,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unreadUserCount: (ticket.unreadUserCount || 0) + 1,
       messages: [...(ticket.messages || []), newMsg],
     };
-    const updatedList = supportTickets.map((t) => t.id === ticket.id ? updatedTicket : t);
-    setSupportTickets(updatedList.sort(
-      (x, y) => new Date(y.lastMessageTime || 0).getTime() - new Date(x.lastMessageTime || 0).getTime()
-    ));
 
     if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
-        if (!result.success) console.error('[Support] Admin reply was not saved:', result.error);
-      });
+      const save = await syncTicketToSupabase(updatedTicket);
+      if (!save.success) {
+        console.error('[Support] Admin reply cloud save failed:', save.error);
+        return { success: false, message: `Reply was not sent because cloud saving failed. ${save.error || ''}`.trim() };
+      }
     }
+
+    setSupportTickets((prev) => prev.map((item) => item.id === ticket.id ? updatedTicket : item)
+      .sort((x, y) => new Date(y.lastMessageTime || 0).getTime() - new Date(x.lastMessageTime || 0).getTime()));
     logAuditAction(
       'SUPPORT_REPLY',
       `${ticket.userName} (${ticket.userId})`,
       'Admin sent reply to support query.'
     );
+    return { success: true, message: 'Reply sent successfully.' };
   };
 
   // Add a shared system event to the conversation without sending an admin chat bubble.

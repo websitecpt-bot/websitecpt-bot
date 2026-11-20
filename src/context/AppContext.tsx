@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
   Trade,
@@ -237,6 +237,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>(() => loadState('withdrawals', initialWithdrawalRequests));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadState('audit', initialAuditLogs));
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => loadState('settings', initialSystemSettings));
+  // Throttle live position snapshots so Admin receives fresh P/L without writing every 500ms.
+  const lastTradeCloudSyncRef = useRef<Record<string, number>>({});
 
   // Navigation & UI state with URL /admin, /login, /register, /agreement router detection
   const [activeTab, setActiveTab] = useState<'home' | 'market' | 'trade' | 'history' | 'account' | 'admin' | 'login' | 'agreement'>(() => {
@@ -821,6 +823,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Dedicated fast 500ms timer loop: Auto-close trades precisely on duration expiry & settle PnL
   useEffect(() => {
+    // Admin monitoring must never settle customer positions from the Admin browser's
+    // independent market feed. Only the customer-side trading session runs this timer.
+    if (typeof window !== 'undefined' && window.sessionStorage.getItem('cpt_admin_auth') === 'true') {
+      return;
+    }
     const timer = setInterval(() => {
       const now = new Date();
       const nowMs = now.getTime();
@@ -914,11 +921,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return closedTradeItem;
           }
 
+          const livePnl = Number(pnl.toFixed(2));
+          const livePnlPercent = Number(pnlPercent.toFixed(2));
+          // Persist the live market snapshot every 3 seconds so the Admin Live Trading
+          // screen and other devices see the same current price and Floating P/L.
+          const lastSyncedAt = lastTradeCloudSyncRef.current[t.id] || 0;
+          if (isSupabaseConfigured() && nowMs - lastSyncedAt >= 3000) {
+            lastTradeCloudSyncRef.current[t.id] = nowMs;
+            syncTradeToSupabase({
+              ...t,
+              currentPrice: curPrice,
+              pnl: livePnl,
+              pnlPercent: livePnlPercent,
+            }).then((result) => {
+              if (!result.success) console.warn('[Trade live sync] Snapshot not saved:', result.error, t.id);
+            }).catch((error) => console.warn('[Trade live sync] Snapshot error:', error, t.id));
+          }
+
           return {
             ...t,
             currentPrice: curPrice,
-            pnl: Number(pnl.toFixed(2)),
-            pnlPercent: Number(pnlPercent.toFixed(2)),
+            pnl: livePnl,
+            pnlPercent: livePnlPercent,
           };
         });
 
@@ -1481,10 +1505,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const pnlPercent = (pnl / trade.margin) * 100;
     const finalReturn = Math.max(0, trade.margin + pnl);
+    // Always credit the owner of this trade, never whichever account happens to be
+    // logged in on this browser (Admin may be viewing/closing another customer's trade).
+    const tradeOwner = users.find((u) => u.id === trade.userId);
+    if (!tradeOwner) {
+      console.error('[Trade settlement] Owner not found; refusing to credit the wrong account.', trade.userId);
+      return;
+    }
+    const updatedBal = Number((tradeOwner.tradingBalance + finalReturn).toFixed(2));
 
-    const updatedBal = Number((currentUser.tradingBalance + finalReturn).toFixed(2));
-
-    // Return to user
+    // Return the margin and realized P/L to the actual trade owner.
     setUsers((prev) =>
       prev.map((u) =>
         u.id === trade.userId
@@ -1509,7 +1539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseConfigured()) {
       syncTradeToSupabase(closedTrade).catch((err) => console.warn('Trade close sync notice:', err));
-      updateUserBalanceInSupabase(trade.userId, updatedBal, currentUser.fundingBalance);
+      updateUserBalanceInSupabase(trade.userId, updatedBal, tradeOwner.fundingBalance);
     }
   };
 

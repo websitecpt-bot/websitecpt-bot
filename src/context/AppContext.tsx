@@ -595,7 +595,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Central Supabase Cloud Sync & Realtime Listener
-  const hydrateFromSupabase = async (includeTickets = false) => {
+  const hydrateFromSupabase = async (includeTickets = true) => {
     if (!isSupabaseConfigured()) return;
     try {
       // Fetch each data group independently. A timeout in the large support-chat
@@ -661,8 +661,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           );
         });
       }
-      setIsSupabaseSynced(true);
+      const coreDataLoaded =
+        results[0].status === 'fulfilled' && cloudUsers !== null &&
+        results[1].status === 'fulfilled' && cloudTrades !== null;
+      setIsSupabaseSynced(coreDataLoaded);
+      if (!coreDataLoaded) {
+        console.warn('[Supabase Cloud Hydration] Account or trade data could not be confirmed from the shared database.');
+      }
     } catch (err) {
+      setIsSupabaseSynced(false);
       console.warn('[Supabase Cloud Hydration] notice:', err);
     }
   };

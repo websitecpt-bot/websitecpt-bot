@@ -136,7 +136,7 @@ interface AppContextType {
   sendUserMessage: (
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ) => Promise<{ success: boolean; message: string }>;
+  ) => Promise<{ success: boolean; message: string; ticketId?: string }>;
   sendAdminReply: (
     ticketId: string,
     text: string,
@@ -1739,7 +1739,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSupportTickets(updatedList.sort(
       (x, y) => new Date(y.lastMessageTime || 0).getTime() - new Date(x.lastMessageTime || 0).getTime()
     ));
-    return { success: true, message: 'Message sent successfully.' };
+    return { success: true, message: 'Message sent successfully.', ticketId: updatedTicket.id };
   };
 
   const startNewSupportChat = async (userId?: string): Promise<{ success: boolean; message: string; ticketId?: string }> => {

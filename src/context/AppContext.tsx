@@ -598,25 +598,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const hydrateFromSupabase = async (includeTickets = true) => {
     if (!isSupabaseConfigured()) return;
     try {
-      // Keep one slow/large support-chat response from blocking customer, trade,
-      // deposit, withdrawal and audit refreshes.
-      const results = await Promise.allSettled([
+      // Support chat history is fetched less often because message JSON can be large.
+      // A slow chat query must not delay refreshes for customer accounts and trading.
+      const [cloudUsers, cloudTrades, cloudTickets, cloudDeposits, cloudWithdrawals, cloudAudit] = await Promise.all([
         fetchUsersFromSupabase(),
         fetchTradesFromSupabase(),
         includeTickets ? fetchTicketsFromSupabase() : Promise.resolve(null),
-        fetchDepositsFromSupabase(),
-        fetchWithdrawalsFromSupabase(),
-        fetchAuditLogsFromSupabase(),
-      ]);
-      const cloudUsers = results[0].status === 'fulfilled' ? results[0].value : null;
-      const cloudTrades = results[1].status === 'fulfilled' ? results[1].value : null;
-      const cloudTickets = results[2].status === 'fulfilled' ? results[2].value : null;
-      const cloudDeposits = results[3].status === 'fulfilled' ? results[3].value : null;
-      const cloudWithdrawals = results[4].status === 'fulfilled' ? results[4].value : null;
-      const cloudAudit = results[5].status === 'fulfilled' ? results[5].value : null;
-        fetchUsersFromSupabase(),
-        fetchTradesFromSupabase(),
-        fetchTicketsFromSupabase(),
         fetchDepositsFromSupabase(),
         fetchWithdrawalsFromSupabase(),
         fetchAuditLogsFromSupabase(),

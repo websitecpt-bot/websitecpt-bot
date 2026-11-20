@@ -675,7 +675,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const refreshAllFromSupabase = async () => {
-    await hydrateFromSupabase();
+    // Manual Admin Sync Now must also refresh the Support Inbox, not just core tables.
+    await hydrateFromSupabase(true);
   };
 
   useEffect(() => {

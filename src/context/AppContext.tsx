@@ -55,6 +55,8 @@ import {
   supabaseAuthSignUp,
   supabaseAuthSignIn,
 } from '../lib/supabase';
+import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
+import { saveFirebaseDocument } from '../lib/firebaseData';
 
 interface AppContextType {
   // Supabase Cloud Sync
@@ -912,7 +914,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const openedTime = t.openedAt ? new Date(t.openedAt).getTime() : 0;
           const isFreshTrade = openedTime > 0 && (nowMs - openedTime < 10000);
 
-          const isExpired = !isFreshTrade && expiryMs > 0 && !isNaN(expiryMs) && nowMs >= expiryMs;
+          const isExpired = !isFreshTrade && typeof expiryMs === 'number' && expiryMs > 0 && !Number.isNaN(expiryMs) && nowMs >= expiryMs;
 
           const targetCoin = coins.find((c) => c.symbol === t.symbol);
           const curPrice = targetCoin ? targetCoin.price : t.currentPrice;
@@ -1155,6 +1157,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastLogin: nowStr,
     };
 
+    // Save new customer authentication and profile to Firebase.
+    try {
+      const firebaseUser = await registerWithFirebase(
+        cleanEmail,
+        password || '123456',
+        cleanName
+      );
+      const { password: _password, ...firebaseProfile } = newUser;
+      await saveFirebaseDocument('users', newUser.id, {
+        ...firebaseProfile,
+        authUid: firebaseUser.uid,
+        authProvider: 'firebase',
+      });
+    } catch (firebaseError) {
+      console.error('[Firebase Registration failed]', firebaseError);
+      return {
+        success: false,
+        message: 'Firebase account creation failed. Please contact Support before trying again.',
+      };
+    }
+
     // Save the customer profile first. Never create a local-only account in production.
     if (isSupabaseConfigured()) {
       const profileSave = await syncUserToSupabase(newUser);
@@ -1269,19 +1292,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'This account has been archived. Please contact Support for assistance.' };
     }
 
-    // Verify password:
+    // Verify Firebase login or migrate a verified legacy account.
     if (password) {
-      if (isSupabaseConfigured() && found.email) {
+      if (!found.email) {
+        return { success: false, message: 'This account has no registered email address.' };
+      }
+
+      let legacyAuthVerified = false;
+
+      if (isSupabaseConfigured()) {
         try {
-          await supabaseAuthSignIn(found.email, password);
-        } catch {
-          // fallback to stored password check
+          const legacyAuth = await supabaseAuthSignIn(found.email, password);
+          legacyAuthVerified = !legacyAuth.error && Boolean(legacyAuth.data?.user);
+        } catch (legacyError) {
+          console.warn('[Legacy login verification]', legacyError);
         }
       }
 
-      const validPass = found.password || '123456';
-      if (password !== validPass) {
-        return { success: false, message: 'Incorrect password. Please verify and try again.' };
+      // Preserve the existing legacy-profile password check during migration.
+      if (!legacyAuthVerified && found.password && password === found.password) {
+        legacyAuthVerified = true;
+      }
+
+      try {
+        const firebaseResult = await loginOrMigrateWithFirebase(
+          found.email,
+          password,
+          legacyAuthVerified,
+          found.name
+        );
+
+        const { password: _password, ...firebaseProfile } = found;
+        await saveFirebaseDocument('users', found.id, {
+          ...firebaseProfile,
+          authUid: firebaseResult.user.uid,
+          authProvider: 'firebase',
+        });
+      } catch (firebaseError) {
+        console.error('[Firebase Login/Migration failed]', firebaseError);
+        return {
+          success: false,
+          message: 'Login or account migration failed. Your existing account has not been deleted. Please contact Support.',
+        };
       }
     }
 
@@ -1552,6 +1604,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    // Firebase trade sync
+    try {
+      await saveFirebaseDocument('trades', newTrade.id, newTrade);
+      await saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: nextTradingBalance,
+        fundingBalance: currentUser.fundingBalance,
+      });
+      console.log('[Firebase Trade Sync] Trade and balance saved.');
+    } catch (firebaseError) {
+      console.error('[Firebase Trade Sync] Save failed:', firebaseError);
+    }
+
     setUsers((prev) => prev.map((u) => u.id === currentUser.id ? { ...u, tradingBalance: nextTradingBalance } : u));
     setTrades((prev) => [newTrade, ...prev]);
     return { success: true, message: `Trade opened successfully for ${symbol}!` };
@@ -1704,7 +1768,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const sendUserMessage = async (
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ): Promise<{ success: boolean; message: string }> => {
+  ): Promise<{ success: boolean; message: string; ticketId?: string }> => {
     if (!text.trim() && !attachment) return { success: false, message: 'Enter a message or attach a file.' };
     if (import.meta.env.PROD && !isSupabaseConfigured()) {
       return { success: false, message: 'Support cloud connection is unavailable. Your message was not sent.' };
@@ -2680,3 +2744,5 @@ export const useApp = () => {
   if (!context) throw new Error('useApp must be used within an AppProvider');
   return context;
 };
+
+

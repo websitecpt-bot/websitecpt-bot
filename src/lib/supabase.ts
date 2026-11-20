@@ -265,20 +265,22 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
 export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null> => {
   if (!supabase) return null;
   try {
-    const pageSize = 10;
     const allRows: any[] = [];
     let offset = 0;
+    let batchSize = 5;
+    const maxRows = 500;
     let sourceTable: 'support_tickets' | 'support_messages' = 'support_tickets';
 
-    // Load a small page at a time. support_tickets contains JSONB message histories
-    // (including attachments); one giant select previously timed out and hid every
-    // new customer message from Admin.
-    while (offset < 500) {
+    // A single oversized/slow historical conversation must not hide every other
+    // customer's support messages and agreement events. Retry failed pages with
+    // smaller ranges; skip only a single row if even the one-row request times out.
+    while (offset < maxRows) {
       let res = await supabase
         .from(sourceTable)
         .select('*')
         .order('last_message_time', { ascending: false })
-        .range(offset, offset + pageSize - 1);
+        .order('id', { ascending: false })
+        .range(offset, offset + batchSize - 1);
 
       if (res.error && offset === 0 && sourceTable === 'support_tickets' &&
           (res.error.message?.includes('does not exist') || res.error.code === '42P01')) {
@@ -287,17 +289,28 @@ export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null
           .from(sourceTable)
           .select('*')
           .order('last_message_time', { ascending: false })
-          .range(offset, offset + pageSize - 1);
+          .order('id', { ascending: false })
+          .range(offset, offset + batchSize - 1);
       }
 
       if (res.error) {
-        console.warn('[Supabase fetchTickets] page error:', res.error.message, { offset, sourceTable });
-        return null;
+        if (batchSize > 1) {
+          batchSize = Math.max(1, Math.floor(batchSize / 2));
+          console.warn('[Supabase fetchTickets] Retrying smaller page after query failure:', res.error.message, { offset, nextBatchSize: batchSize });
+          continue;
+        }
+        console.warn('[Supabase fetchTickets] Skipping one unreadable historical ticket; continuing with other customers:', res.error.message, { offset, sourceTable });
+        offset += 1;
+        batchSize = 1;
+        continue;
       }
+
       const page = res.data || [];
       allRows.push(...page);
-      if (page.length < pageSize) break;
-      offset += pageSize;
+      offset += page.length;
+
+      if (page.length < batchSize) break;
+      batchSize = 5;
     }
 
     return allRows.map((row: any) => ({

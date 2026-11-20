@@ -29,10 +29,11 @@ export const DepositModal: React.FC = () => {
 
   if (!isDepositModalOpen) return null;
 
-  const handleOpenSupport = () => {
+  const handleOpenSupport = async () => {
+    const result = await sendUserMessage('Hello Support, I would like to deposit funds into my account. Please provide the verified deposit address.');
     setIsDepositModalOpen(false);
-    sendUserMessage('Hello Support, I would like to deposit funds into my account. Please provide the verified deposit address.');
     setIsSupportOpen(true);
+    if (!result.success) window.alert(result.message);
   };
 
   const handleTxidSubmit = async (e: React.FormEvent) => {

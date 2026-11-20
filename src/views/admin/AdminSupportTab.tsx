@@ -136,7 +136,7 @@ export const AdminSupportTab: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleSendReply = (e?: React.FormEvent | React.KeyboardEvent) => {
+  const handleSendReply = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e && 'preventDefault' in e) e.preventDefault();
     const activeTarget = selectedTicket || sortedTickets.find((t) => t.id === selectedTicketId) || sortedTickets[0];
     if ((!replyText.trim() && !adminAttachment) || !activeTarget) return;
@@ -150,11 +150,15 @@ export const AdminSupportTab: React.FC = () => {
         }
       : undefined;
 
+    const result = await sendAdminReply(activeTarget.id, textToSend, attachmentToSend);
+    if (!result.success) {
+      window.alert(result.message);
+      return;
+    }
+
     setReplyText('');
     if (adminAttachment?.previewUrl) URL.revokeObjectURL(adminAttachment.previewUrl);
     setAdminAttachment(null);
-
-    sendAdminReply(activeTarget.id, textToSend, attachmentToSend);
   };
 
   const postSystemNotification = (text: string) => {

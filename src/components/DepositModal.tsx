@@ -35,7 +35,7 @@ export const DepositModal: React.FC = () => {
     setIsSupportOpen(true);
   };
 
-  const handleTxidSubmit = (e: React.FormEvent) => {
+  const handleTxidSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) {
@@ -47,16 +47,18 @@ export const DepositModal: React.FC = () => {
       return;
     }
 
-    submitDepositRequest({
+    const result = await submitDepositRequest({
       amount: amt,
       txid,
       paymentMethod,
       note: 'User submitted proof of deposit via Deposit Portal',
     });
 
-    setFeedback('Deposit submitted! Our admin team has received your transaction ID for verification.');
-    setAmount('');
-    setTxid('');
+    setFeedback(result.message);
+    if (result.success) {
+      setAmount('');
+      setTxid('');
+    }
   };
 
   return (

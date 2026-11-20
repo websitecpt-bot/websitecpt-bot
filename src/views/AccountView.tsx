@@ -172,7 +172,7 @@ export const AccountView: React.FC = () => {
   // User's withdrawals
   const userWithdrawals = withdrawalRequests.filter((w) => w.userId === currentUser.id);
 
-  const handleWithdrawSubmit = (e: React.FormEvent) => {
+  const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(withdrawAmount);
     if (!amt || amt <= 0 || isNaN(amt)) {
@@ -205,7 +205,7 @@ export const AccountView: React.FC = () => {
         return;
       }
 
-      const res = submitWithdrawalRequest({
+      const res = await submitWithdrawalRequest({
         amount: amt,
         accountHolderName,
         bankOrAddress: `${bankOrProvider} - ${accountNumber}`,
@@ -231,7 +231,7 @@ export const AccountView: React.FC = () => {
         return;
       }
 
-      const res = submitWithdrawalRequest({
+      const res = await submitWithdrawalRequest({
         amount: amt,
         accountHolderName: currentUser.name,
         bankOrAddress: usdtAddress,

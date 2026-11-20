@@ -102,7 +102,7 @@ export const TradeView: React.FC = () => {
   const bidPrice = activeCoin.price - halfSpread;
   const askPrice = activeCoin.price + halfSpread;
 
-  const handleOrder = (type: TradeType) => {
+  const handleOrder = async (type: TradeType) => {
     if (leverage <= 0) {
       setOrderNotification({ type: 'error', message: 'Please enter a valid leverage amount.' });
       return;
@@ -113,7 +113,7 @@ export const TradeView: React.FC = () => {
       return;
     }
 
-    const res = openTrade({
+    const res = await openTrade({
       symbol: selectedSymbol,
       type,
       leverage,

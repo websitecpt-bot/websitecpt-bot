@@ -124,7 +124,7 @@ interface AppContextType {
     leverage: number;
     margin: number;
     durationMinutes: number;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string }>;
   closeTrade: (tradeId: string) => void;
   setTradeOutcome: (tradeId: string, outcome: 'WIN' | 'LOSS' | null, percent?: number) => void;
   adminSettleTrade: (tradeId: string, outcome: 'WIN' | 'LOSS', percent?: number) => void;
@@ -136,7 +136,7 @@ interface AppContextType {
   sendUserMessage: (
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ) => void;
+  ) => Promise<{ success: boolean; message: string }>;
   sendAdminReply: (
     ticketId: string,
     text: string,
@@ -174,7 +174,7 @@ interface AppContextType {
     paymentMethod: string;
     network?: string;
     note?: string;
-  }) => void;
+  }) => Promise<{ success: boolean; message: string }>;
   approveDeposit: (depositId: string) => void;
   rejectDeposit: (depositId: string, note?: string) => void;
 
@@ -187,7 +187,7 @@ interface AppContextType {
     withdrawalType?: 'USD' | 'USDT';
     wallet?: 'funding' | 'trading';
     notes?: string;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string }>;
   approveWithdrawal: (withdrawalId: string) => void;
   rejectWithdrawal: (withdrawalId: string, reason: string) => void;
 
@@ -675,7 +675,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const refreshAllFromSupabase = async () => {
-    await hydrateFromSupabase();
+    // Manual Admin Sync Now must also refresh the Support Inbox, not just core tables.
+    await hydrateFromSupabase(true);
   };
 
   useEffect(() => {
@@ -1427,7 +1428,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const openTrade = ({
+  const openTrade = async ({
     symbol,
     type,
     leverage,
@@ -1439,7 +1440,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     leverage: number;
     margin: number;
     durationMinutes: number;
-  }) => {
+  }): Promise<{ success: boolean; message: string }> => {
     if (currentUser.status === 'suspended') {
       return { success: false, message: 'Your account is suspended. Please contact Support.' };
     }
@@ -1448,34 +1449,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const positionSize = margin * leverage;
-    // User requirement: display shows Fee (0.1%), but actual deduction formula is 0.0005% ($5 per $1,000,000 position)
+    // Preserve the existing fee calculation and customer-facing trade rules.
     const fee = Number((positionSize * 0.000005).toFixed(2));
     const totalDeduction = margin + fee;
-
     if (currentUser.tradingBalance < totalDeduction) {
       return { success: false, message: 'Insufficient trading balance.' };
     }
 
     const targetCoin = coins.find((c) => c.symbol === symbol);
-    if (!targetCoin) {
-      return { success: false, message: 'Invalid symbol.' };
+    if (!targetCoin) return { success: false, message: 'Invalid symbol.' };
+
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'Secure cloud connection is unavailable. Your trade was not opened. Please contact Support.' };
     }
 
-    // Deduct from user
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === currentUser.id
-          ? { ...u, tradingBalance: Number((u.tradingBalance - totalDeduction).toFixed(2)) }
-          : u
-      )
-    );
-
+    const nextTradingBalance = Number((currentUser.tradingBalance - totalDeduction).toFixed(2));
     const now = new Date();
     const nowMs = now.getTime();
     const expiryMs = nowMs + durationMinutes * 60 * 1000;
     const expiry = new Date(expiryMs);
-
-    // Use current coin price with spread for execution
     const halfSpread = targetCoin.spread / 2;
     const entryPrice = type === 'BUY' ? targetCoin.price + halfSpread : targetCoin.price - halfSpread;
 
@@ -1500,15 +1492,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fee,
     };
 
-    setTrades((prev) => [newTrade, ...prev]);
+    // Require the shared database to confirm both writes before showing success locally.
     if (isSupabaseConfigured()) {
-      syncTradeToSupabase(newTrade).catch((err) => console.warn('Trade sync notice:', err));
-      updateUserBalanceInSupabase(
-        currentUser.id,
-        Number((currentUser.tradingBalance - totalDeduction).toFixed(2)),
-        currentUser.fundingBalance
-      );
+      const balanceSave = await updateUserBalanceInSupabase(currentUser.id, nextTradingBalance, currentUser.fundingBalance);
+      if (!balanceSave.success) {
+        return { success: false, message: `Trade not opened: Trading Balance could not be saved to the cloud. ${balanceSave.error || ''}`.trim() };
+      }
+      const tradeSave = await syncTradeToSupabase(newTrade);
+      if (!tradeSave.success) {
+        const rollback = await updateUserBalanceInSupabase(currentUser.id, currentUser.tradingBalance, currentUser.fundingBalance);
+        console.error('[Trade] Cloud trade save failed; balance rollback:', rollback.success, tradeSave.error);
+        return { success: false, message: `Trade not opened because cloud saving failed. ${tradeSave.error || ''}`.trim() };
+      }
     }
+
+    setUsers((prev) => prev.map((u) => u.id === currentUser.id ? { ...u, tradingBalance: nextTradingBalance } : u));
+    setTrades((prev) => [newTrade, ...prev]);
     return { success: true, message: `Trade opened successfully for ${symbol}!` };
   };
 
@@ -1656,11 +1655,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Support System
-  const sendUserMessage = (
+  const sendUserMessage = async (
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ) => {
-    if (!text.trim() && !attachment) return;
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!text.trim() && !attachment) return { success: false, message: 'Enter a message or attach a file.' };
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'Support cloud connection is unavailable. Your message was not sent.' };
+    }
+
     const nowStr = new Date().toISOString();
     const displaySummary = text.trim() || (attachment ? `📎 [${attachment.type === 'image' ? 'Photo' : 'File'}] ${attachment.name}` : '');
     const newMsg: SupportMessage = {
@@ -1702,20 +1705,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           messages: [newMsg],
         };
 
+    if (isSupabaseConfigured()) {
+      const save = await syncTicketToSupabase(updatedTicket);
+      if (!save.success) {
+        console.error('[Support] User message cloud save failed:', save.error);
+        return { success: false, message: `Message was not sent because cloud saving failed. ${save.error || ''}`.trim() };
+      }
+    }
+
     const updatedList = activeTicket
       ? supportTickets.map((t) => t.id === activeTicket.id ? updatedTicket : t)
       : [updatedTicket, ...supportTickets];
     setSupportTickets(updatedList.sort(
       (x, y) => new Date(y.lastMessageTime || 0).getTime() - new Date(x.lastMessageTime || 0).getTime()
     ));
-
-    if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
-        if (!result.success) console.error('[Support] User message was not saved:', result.error);
-      });
-    }
-
-
+    return { success: true, message: 'Message sent successfully.' };
   };
 
   const startNewSupportChat = (userId?: string) => {
@@ -2121,7 +2125,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Deposit Management
-  const submitDepositRequest = ({
+  const submitDepositRequest = async ({
     amount,
     txid,
     paymentMethod,
@@ -2133,7 +2137,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: string;
     network?: string;
     note?: string;
-  }) => {
+  }): Promise<{ success: boolean; message: string }> => {
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'Cloud connection is unavailable. The deposit request was not submitted.' };
+    }
     const newReq: DepositRequest = {
       id: `dep-${Date.now().toString().slice(-6)}`,
       userId: currentUser.id,
@@ -2146,10 +2153,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       note,
     };
+    if (isSupabaseConfigured()) {
+      const saved = await syncDepositToSupabase(newReq);
+      if (!saved.success) {
+        console.error('[Deposit] Cloud save failed:', saved.error);
+        return { success: false, message: `Deposit request was not submitted. ${saved.error || ''}`.trim() };
+      }
+    }
     setDepositRequests((prev) => [newReq, ...prev]);
-    void syncDepositToSupabase(newReq).then((result) => {
-      if (!result.success) console.error('[Deposit] Request was not saved:', result.error);
-    });
+    return { success: true, message: 'Deposit request submitted and saved for Admin review.' };
   };
 
   const approveDeposit = (depositId: string) => {
@@ -2202,7 +2214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Withdrawal Management
-  const submitWithdrawalRequest = ({
+  const submitWithdrawalRequest = async ({
     amount,
     accountHolderName,
     bankOrAddress,
@@ -2218,9 +2230,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     withdrawalType?: 'USD' | 'USDT';
     wallet?: 'funding' | 'trading';
     notes?: string;
-  }) => {
-    if (currentUser.status === 'suspended') {
-      return { success: false, message: 'Account is suspended from withdrawals.' };
+  }): Promise<{ success: boolean; message: string }> => {
+    if (currentUser.status === 'suspended' || currentUser.status === 'archived') {
+      return { success: false, message: 'This account cannot submit withdrawals. Please contact Support.' };
     }
     if (amount < systemSettings.minWithdrawal) {
       return { success: false, message: `Minimum withdrawal is $${systemSettings.minWithdrawal}.` };
@@ -2228,31 +2240,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const isFunding = wallet === 'funding';
     const available = isFunding ? (currentUser.fundingBalance || 0) : (currentUser.tradingBalance || 0);
-
     if (available < amount) {
-      return {
-        success: false,
-        message: `Insufficient ${isFunding ? 'Funding' : 'Trading'} balance ($${available.toFixed(2)} available).`,
-      };
+      return { success: false, message: `Insufficient ${isFunding ? 'Funding' : 'Trading'} balance ($${available.toFixed(2)} available).` };
+    }
+    if (import.meta.env.PROD && !isSupabaseConfigured()) {
+      return { success: false, message: 'Cloud connection is unavailable. The withdrawal was not submitted and no balance was deducted.' };
     }
 
-    const newFunding = isFunding
-      ? Number((currentUser.fundingBalance - amount).toFixed(2))
-      : currentUser.fundingBalance;
-    const newTrading = isFunding
-      ? currentUser.tradingBalance
-      : Number((currentUser.tradingBalance - amount).toFixed(2));
-
-    // Deduct funds immediately upon request
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === currentUser.id
-          ? { ...u, tradingBalance: newTrading, fundingBalance: newFunding }
-          : u
-      )
-    );
-    updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
-
+    const oldFunding = currentUser.fundingBalance || 0;
+    const oldTrading = currentUser.tradingBalance || 0;
+    const newFunding = isFunding ? Number((oldFunding - amount).toFixed(2)) : oldFunding;
+    const newTrading = isFunding ? oldTrading : Number((oldTrading - amount).toFixed(2));
     const newReq: WithdrawalRequest = {
       id: `wth-${Date.now().toString().slice(-6)}`,
       userId: currentUser.id,
@@ -2268,20 +2266,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
 
-    setWithdrawalRequests((prev) => [newReq, ...prev]);
-    void syncWithdrawalToSupabase(newReq).then((result) => {
-      if (!result.success) console.error('[Withdrawal] Request was not saved:', result.error);
-    });
+    if (isSupabaseConfigured()) {
+      const balanceSave = await updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+      if (!balanceSave.success) {
+        return { success: false, message: `Withdrawal not submitted: balance could not be saved. ${balanceSave.error || ''}`.trim() };
+      }
+      const requestSave = await syncWithdrawalToSupabase(newReq);
+      if (!requestSave.success) {
+        const rollback = await updateUserBalanceInSupabase(currentUser.id, oldTrading, oldFunding);
+        console.error('[Withdrawal] Request save failed; balance rollback:', rollback.success, requestSave.error);
+        return { success: false, message: `Withdrawal not submitted because cloud saving failed. ${requestSave.error || ''}`.trim() };
+      }
+    }
 
+    setUsers((prev) => prev.map((u) => u.id === currentUser.id
+      ? { ...u, tradingBalance: newTrading, fundingBalance: newFunding }
+      : u
+    ));
+    setWithdrawalRequests((prev) => [newReq, ...prev]);
     logAuditAction(
       'WITHDRAWAL_REQUESTED',
       `${currentUser.name} (${currentUser.uid})`,
       `Submitted $${amount.toFixed(2)} withdrawal from ${isFunding ? 'Funding' : 'Trading'} Wallet.`
     );
-
     return {
       success: true,
-      message: `Withdrawal request of $${amount.toFixed(2)} from ${isFunding ? 'Funding' : 'Trading'} Wallet submitted! Our finance desk is reviewing your transaction.`,
+      message: `Withdrawal request of $${amount.toFixed(2)} from ${isFunding ? 'Funding' : 'Trading'} Wallet submitted and saved for Admin review.`,
     };
   };
 

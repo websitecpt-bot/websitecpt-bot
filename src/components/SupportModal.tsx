@@ -149,35 +149,24 @@ export const SupportModal: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() && !selectedAttachment) return;
-    if (isCurrentSessionClosed) {
-      // If current session is closed, start a new chat automatically
-      startNewSupportChat(currentUser.id);
-      setTimeout(() => {
-        sendUserMessage(
-          inputMessage.trim(),
-          selectedAttachment
-            ? {
-                url: selectedAttachment.url,
-                name: selectedAttachment.name,
-                type: selectedAttachment.type,
-              }
-            : undefined
-        );
-      }, 50);
-    } else {
-      sendUserMessage(
-        inputMessage.trim(),
-        selectedAttachment
-          ? {
-              url: selectedAttachment.url,
-              name: selectedAttachment.name,
-              type: selectedAttachment.type,
-            }
-          : undefined
-      );
+
+    const result = await sendUserMessage(
+      inputMessage.trim(),
+      selectedAttachment
+        ? {
+            url: selectedAttachment.url,
+            name: selectedAttachment.name,
+            type: selectedAttachment.type,
+          }
+        : undefined
+    );
+
+    if (!result.success) {
+      window.alert(result.message);
+      return;
     }
 
     setInputMessage('');

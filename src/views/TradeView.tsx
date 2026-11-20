@@ -11,6 +11,12 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
+const getSuggestedMargin = (balance: number): string => {
+  const available = Number.isFinite(balance) ? Math.max(0, balance) : 0;
+  if (available <= 0) return '';
+  return Math.min(100, Math.floor(available * 0.8 * 100) / 100).toFixed(2);
+};
+
 const DURATION_OPTIONS = [
   { label: '1 min', value: 1 },
   { label: '5 min', value: 5 },
@@ -83,7 +89,18 @@ export const TradeView: React.FC = () => {
 
   const [leverageInput, setLeverageInput] = useState<string>('10');
   const [durationMinutes, setDurationMinutes] = useState<number>(1);
-  const [marginInput, setMarginInput] = useState<string>('100');
+  const [marginInput, setMarginInput] = useState<string>(() => getSuggestedMargin(currentUser.tradingBalance));
+
+  useEffect(() => {
+    const available = Number(currentUser.tradingBalance) || 0;
+    setMarginInput((previous) => {
+      const entered = Number.parseFloat(previous);
+      if (!previous || !Number.isFinite(entered) || entered <= 0 || entered > available) {
+        return getSuggestedMargin(available);
+      }
+      return previous;
+    });
+  }, [currentUser.id, currentUser.tradingBalance]);
   const [orderNotification, setOrderNotification] = useState<{
     type: 'success' | 'error';
     message: string;

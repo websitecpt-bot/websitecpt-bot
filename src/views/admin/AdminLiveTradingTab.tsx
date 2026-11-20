@@ -185,6 +185,7 @@ export const AdminLiveTradingTab: React.FC = () => {
                   <th className="px-4 py-3">Amount ($)</th>
                   <th className="px-4 py-3">Entry Price</th>
                   <th className="px-4 py-3 text-cyan-400">Live Market</th>
+                  <th className="px-4 py-3">Floating P/L</th>
                   <th className="px-4 py-3">Time Left</th>
                   <th className="px-4 py-3">Scheduled Outcome</th>
                   <th className="px-4 py-3 text-right">Admin Actions</th>
@@ -195,6 +196,9 @@ export const AdminLiveTradingTab: React.FC = () => {
                   const targetCoin = coins.find((c) => c.symbol === trade.symbol);
                   const curPrice = targetCoin ? targetCoin.price : trade.currentPrice;
                   const isBuy = trade.type === 'BUY';
+                  const livePnl = trade.entryPrice > 0
+                    ? (isBuy ? (curPrice - trade.entryPrice) : (trade.entryPrice - curPrice)) / trade.entryPrice * trade.positionSize
+                    : 0;
                   const isScheduledWin = trade.scheduledOutcome === 'WIN';
                   const isScheduledLoss = trade.scheduledOutcome === 'LOSS';
                   const scheduledPct = trade.scheduledPercent ?? (isScheduledWin ? 35 : 100);
@@ -248,6 +252,16 @@ export const AdminLiveTradingTab: React.FC = () => {
                         <div className="text-cyan-300 font-bold bg-cyan-400/5 px-2 py-0.5 rounded inline-flex items-center gap-1.5">
                           <span>${curPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+                        </div>
+                      </td>
+
+                      {/* FLOATING P/L */}
+                      <td className="px-4 py-3.5 font-mono">
+                        <span className={`font-bold ${livePnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {livePnl >= 0 ? "+" : "-"}${Math.abs(livePnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <div className="text-[10px] text-slate-500">
+                          {trade.margin > 0 ? (livePnl / trade.margin * 100).toFixed(2) : "0.00"}%
                         </div>
                       </td>
 

@@ -724,7 +724,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         const cloudTicket = await fetchSupportTicketFromSupabase(ticketId);
         if (cloudTicket && isMounted) {
-          setSupportTickets((prev) => mergeIncomingTickets(prev, [cloudTicket]));
+          setSupportTickets((prev) => {
+            const existing = prev.find((ticket) => ticket.id === cloudTicket.id);
+            const mergedTicket = mergeIncomingTickets(existing ? [existing] : [], [cloudTicket])[0];
+            const next = existing
+              ? prev.map((ticket) => ticket.id === cloudTicket.id ? mergedTicket : ticket)
+              : [mergedTicket, ...prev];
+            return next.sort(
+              (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+            );
+          });
         }
       },
       onDepositUpdate: async () => {

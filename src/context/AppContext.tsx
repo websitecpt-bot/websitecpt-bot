@@ -34,7 +34,9 @@ import {
   getSupabaseConfigStatus,
   fetchUsersFromSupabase,
   fetchTradesFromSupabase,
+  fetchTradeFromSupabase,
   fetchTicketsFromSupabase,
+  fetchSupportTicketFromSupabase,
   fetchDepositsFromSupabase,
   fetchWithdrawalsFromSupabase,
   fetchAuditLogsFromSupabase,
@@ -691,24 +693,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const u = await fetchUsersFromSupabase();
         if (u && isMounted) setUsers(u);
       },
-      onTradeUpdate: async () => {
-        const t = await fetchTradesFromSupabase();
-        if (t && isMounted) {
-          setTrades((prev) => {
-            const cloudMap = new Map(t.map((trade) => [trade.id, trade]));
-            const merged = [...t];
-            prev.forEach((localTrade) => {
-              if (!cloudMap.has(localTrade.id)) merged.push(localTrade);
-            });
-            return merged.sort(
-              (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+      onTradeUpdate: async (payload) => {
+        // A live P/L update affects one trade. Fetch only that row instead of
+        // re-downloading the customer's complete trade history on every event.
+        const tradeId = payload?.new?.id || payload?.old?.id;
+        if (!tradeId || !isMounted) return;
+        if (payload?.eventType === 'DELETE') {
+          setTrades((prev) => prev.filter((trade) => trade.id !== tradeId));
+          return;
+        }
+        const cloudTrade = await fetchTradeFromSupabase(tradeId);
+        if (!cloudTrade || !isMounted) return;
+        setTrades((prev) => {
+          const exists = prev.some((trade) => trade.id === cloudTrade.id);
+          const merged = exists
+            ? prev.map((trade) => trade.id === cloudTrade.id ? cloudTrade : trade)
+            : [cloudTrade, ...prev];
+          return merged.sort(
+            (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+          );
+        });
+      },
+      onTicketUpdate: async (payload) => {
+        // Support messages update one ticket row; don't reload every chat history.
+        const ticketId = payload?.new?.id || payload?.old?.id;
+        if (!ticketId || !isMounted) return;
+        if (payload?.eventType === 'DELETE') {
+          setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
+          return;
+        }
+        const cloudTicket = await fetchSupportTicketFromSupabase(ticketId);
+        if (cloudTicket && isMounted) {
+          setSupportTickets((prev) => {
+            const existing = prev.find((ticket) => ticket.id === cloudTicket.id);
+            const mergedTicket = mergeIncomingTickets(existing ? [existing] : [], [cloudTicket])[0];
+            const next = existing
+              ? prev.map((ticket) => ticket.id === cloudTicket.id ? mergedTicket : ticket)
+              : [mergedTicket, ...prev];
+            return next.sort(
+              (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
             );
           });
         }
-      },
-      onTicketUpdate: async () => {
-        const k = await fetchTicketsFromSupabase();
-        if (k && isMounted) setSupportTickets((prev) => mergeIncomingTickets(prev, k));
       },
       onDepositUpdate: async () => {
         const d = await fetchDepositsFromSupabase();
@@ -734,18 +760,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     });
 
-    // Poll core account/trading/finance data without repeatedly loading large chat histories.
-    // Support tickets are fetched separately at a lower frequency; Realtime still refreshes them instantly.
+    // Realtime handles changes immediately. Poll less often as a fallback to
+    // avoid repeatedly transferring the same account and full support history.
     const pollTimer = setInterval(() => {
       if (isMounted) hydrateFromSupabase(false);
-    }, 10000);
+    }, 60000);
     const ticketPollTimer = setInterval(async () => {
       if (!isMounted) return;
       const tickets = await fetchTicketsFromSupabase();
       if (tickets && isMounted) {
         setSupportTickets((prev) => mergeIncomingTickets(prev, tickets));
       }
-    }, 30000);
+    }, 180000);
 
     return () => {
       isMounted = false;
@@ -946,10 +972,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           const livePnl = Number(pnl.toFixed(2));
           const livePnlPercent = Number(pnlPercent.toFixed(2));
-          // Persist the live market snapshot every 3 seconds so the Admin Live Trading
-          // screen and other devices see the same current price and Floating P/L.
+          // Persist the live market snapshot every 10 seconds. Realtime sends the
+          // changed trade row to other devices without reloading the full trade table.
           const lastSyncedAt = lastTradeCloudSyncRef.current[t.id] || 0;
-          if (isSupabaseConfigured() && nowMs - lastSyncedAt >= 3000) {
+          if (isSupabaseConfigured() && nowMs - lastSyncedAt >= 10000) {
             lastTradeCloudSyncRef.current[t.id] = nowMs;
             syncTradeToSupabase({
               ...t,

@@ -91,6 +91,20 @@ export const supabase = isSupabaseConfigured()
 
 export const getSupabaseClient = () => supabase;
 
+// Supabase usage restrictions return HTTP 402. Do not retry these requests:
+// pagination retries cannot restore a restricted project and can multiply egress.
+const isSupabaseQuotaRestrictionError = (error: any): boolean => {
+  const status = Number(error?.status ?? error?.statusCode ?? error?.code);
+  const message = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.code,
+  ].filter(Boolean).join(' ');
+  return status === 402 || /exceed_egress_quota|exceed.{0,30}egress.{0,30}quota|project is restricted|spend cap/i.test(message);
+};
+
+
 const SUPPORT_ATTACHMENT_BUCKET = 'support-attachments';
 const SUPPORT_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -213,6 +227,41 @@ export const fetchUsersFromSupabase = async (): Promise<User[] | null> => {
   }
 };
 
+const mapSupabaseTradeRow = (row: any): Trade => {
+  const duration = Number(row.duration_minutes || 1);
+  let expiryMs = row.expires_at ? new Date(row.expires_at).getTime() : NaN;
+  if (isNaN(expiryMs) || expiryMs <= 0) {
+    const openedMs = row.opened_at ? new Date(row.opened_at).getTime() : Date.now();
+    expiryMs = (isNaN(openedMs) ? Date.now() : openedMs) + duration * 60 * 1000;
+  }
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    symbol: row.symbol,
+    type: row.type as 'BUY' | 'SELL',
+    leverage: Number(row.leverage || 10),
+    margin: Number(row.margin || 0),
+    positionSize: Number(row.position_size || 0),
+    entryPrice: Number(row.entry_price || 0),
+    currentPrice: Number(row.current_price || 0),
+    exitPrice: row.exit_price
+      ? Number(row.exit_price)
+      : (row.status === 'CLOSED' ? Number(row.current_price || row.entry_price) : undefined),
+    status: row.status as 'OPEN' | 'CLOSED',
+    durationMinutes: duration,
+    openedAt: row.opened_at || new Date().toISOString(),
+    closedAt: row.closed_at || undefined,
+    expiresAt: row.expires_at || new Date(expiryMs).toISOString(),
+    expiresAtMs: expiryMs,
+    pnl: Number(row.pnl || 0),
+    pnlPercent: Number(row.pnl_percent || 0),
+    fee: Number(row.fee || 0),
+    scheduledOutcome: row.scheduled_outcome || undefined,
+    scheduledPercent: row.scheduled_percent ? Number(row.scheduled_percent) : undefined,
+  };
+};
+
 export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
   if (!supabase) return null;
   try {
@@ -222,42 +271,54 @@ export const fetchTradesFromSupabase = async (): Promise<Trade[] | null> => {
       return null;
     }
     if (!data) return null;
-    return data.map((row: any) => {
-      const duration = Number(row.duration_minutes || 1);
-      let expiryMs = row.expires_at ? new Date(row.expires_at).getTime() : NaN;
-      if (isNaN(expiryMs) || expiryMs <= 0) {
-        const openedMs = row.opened_at ? new Date(row.opened_at).getTime() : Date.now();
-        expiryMs = (isNaN(openedMs) ? Date.now() : openedMs) + duration * 60 * 1000;
-      }
-      return {
-        id: row.id,
-        userId: row.user_id,
-        userName: row.user_name,
-        symbol: row.symbol,
-        type: row.type as 'BUY' | 'SELL',
-        leverage: Number(row.leverage || 10),
-        margin: Number(row.margin || 0),
-        positionSize: Number(row.position_size || 0),
-        entryPrice: Number(row.entry_price || 0),
-        currentPrice: Number(row.current_price || 0),
-        exitPrice: row.exit_price
-          ? Number(row.exit_price)
-          : (row.status === 'CLOSED' ? Number(row.current_price || row.entry_price) : undefined),
-        status: row.status as 'OPEN' | 'CLOSED',
-        durationMinutes: duration,
-        openedAt: row.opened_at || new Date().toISOString(),
-        closedAt: row.closed_at || undefined,
-        expiresAt: row.expires_at || new Date(expiryMs).toISOString(),
-        expiresAtMs: expiryMs,
-        pnl: Number(row.pnl || 0),
-        pnlPercent: Number(row.pnl_percent || 0),
-        fee: Number(row.fee || 0),
-        scheduledOutcome: row.scheduled_outcome || undefined,
-        scheduledPercent: row.scheduled_percent ? Number(row.scheduled_percent) : undefined,
-      };
-    });
+    return data.map(mapSupabaseTradeRow);
   } catch (err) {
     console.warn('[Supabase fetchTrades] exception:', err);
+    return null;
+  }
+};
+
+export const fetchTradeFromSupabase = async (tradeId: string): Promise<Trade | null> => {
+  if (!supabase || !tradeId) return null;
+  try {
+    const { data, error } = await supabase.from('trades').select('*').eq('id', tradeId).maybeSingle();
+    if (error) {
+      console.warn('[Supabase fetchTradeById] error:', error.message);
+      return null;
+    }
+    return data ? mapSupabaseTradeRow(data) : null;
+  } catch (err) {
+    console.warn('[Supabase fetchTradeById] exception:', err);
+    return null;
+  }
+};
+
+const mapSupabaseTicketRow = (row: any): SupportTicket => ({
+  id: row.id,
+  userId: row.user_id,
+  userName: row.user_name,
+  userEmail: row.user_email || '',
+  status: (row.status || 'pending') as 'pending' | 'answered' | 'closed',
+  isSessionClosed: row.is_session_closed ?? (row.status === 'closed'),
+  sessionNumber: row.session_number ? Number(row.session_number) : undefined,
+  lastMessage: row.last_message || '',
+  lastMessageTime: row.last_message_time || new Date().toISOString(),
+  unreadAdminCount: Number(row.unread_admin_count || 0),
+  unreadUserCount: Number(row.unread_user_count || 0),
+  messages: Array.isArray(row.messages) ? row.messages : [],
+});
+
+export const fetchSupportTicketFromSupabase = async (ticketId: string): Promise<SupportTicket | null> => {
+  if (!supabase || !ticketId) return null;
+  try {
+    const { data, error } = await supabase.from('support_tickets').select('*').eq('id', ticketId).maybeSingle();
+    if (error) {
+      console.warn('[Supabase fetchTicketById] error:', error.message);
+      return null;
+    }
+    return data ? mapSupabaseTicketRow(data) : null;
+  } catch (err) {
+    console.warn('[Supabase fetchTicketById] exception:', err);
     return null;
   }
 };
@@ -267,14 +328,16 @@ export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null
   try {
     const allRows: any[] = [];
     let offset = 0;
-    let batchSize = 5;
+    // The current project has far fewer than 100 support sessions. Fetch them in
+    // efficient pages instead of issuing dozens of tiny requests every refresh.
+    let batchSize = 100;
     const maxRows = 500;
+    const maxRequests = 20;
+    let requestCount = 0;
     let sourceTable: 'support_tickets' | 'support_messages' = 'support_tickets';
 
-    // A single oversized/slow historical conversation must not hide every other
-    // customer's support messages and agreement events. Retry failed pages with
-    // smaller ranges; skip only a single row if even the one-row request times out.
-    while (offset < maxRows) {
+    while (offset < maxRows && requestCount < maxRequests) {
+      requestCount += 1;
       let res = await supabase
         .from(sourceTable)
         .select('*')
@@ -294,39 +357,31 @@ export const fetchTicketsFromSupabase = async (): Promise<SupportTicket[] | null
       }
 
       if (res.error) {
-        if (batchSize > 1) {
-          batchSize = Math.max(1, Math.floor(batchSize / 2));
-          console.warn('[Supabase fetchTickets] Retrying smaller page after query failure:', res.error.message, { offset, nextBatchSize: batchSize });
+        // Never turn a project-level quota restriction into hundreds of retries.
+        if (isSupabaseQuotaRestrictionError(res.error)) {
+          console.error('[Supabase fetchTickets] Project usage restriction detected; stopping pagination.');
+          return null;
+        }
+        if (batchSize > 10) {
+          batchSize = Math.max(10, Math.floor(batchSize / 2));
+          console.warn('[Supabase fetchTickets] Retrying a smaller page after a query error:', res.error.message, { offset, nextBatchSize: batchSize });
           continue;
         }
-        console.warn('[Supabase fetchTickets] Skipping one unreadable historical ticket; continuing with other customers:', res.error.message, { offset, sourceTable });
-        offset += 1;
-        batchSize = 1;
-        continue;
+        console.warn('[Supabase fetchTickets] Unable to load the next history page; stopping to avoid repeated requests:', res.error.message, { offset, sourceTable });
+        return null;
       }
 
       const page = res.data || [];
       allRows.push(...page);
       offset += page.length;
-
       if (page.length < batchSize) break;
-      batchSize = 5;
     }
 
-    return allRows.map((row: any) => ({
-      id: row.id,
-      userId: row.user_id,
-      userName: row.user_name,
-      userEmail: row.user_email || '',
-      status: (row.status || 'pending') as 'pending' | 'answered' | 'closed',
-      isSessionClosed: row.is_session_closed ?? (row.status === 'closed'),
-      sessionNumber: row.session_number ? Number(row.session_number) : undefined,
-      lastMessage: row.last_message || '',
-      lastMessageTime: row.last_message_time || new Date().toISOString(),
-      unreadAdminCount: Number(row.unread_admin_count || 0),
-      unreadUserCount: Number(row.unread_user_count || 0),
-      messages: Array.isArray(row.messages) ? row.messages : [],
-    }));
+    if (requestCount >= maxRequests && offset < maxRows) {
+      console.warn('[Supabase fetchTickets] Reached the bounded history page limit; returning the loaded sessions only.');
+    }
+
+    return allRows.map(mapSupabaseTicketRow);
   } catch (err) {
     console.warn('[Supabase fetchTickets] exception:', err);
     return null;
@@ -728,8 +783,8 @@ export const deleteSupportTicketFromSupabase = async (
 export interface RealtimeHandlers {
   onRefreshAll?: () => void;
   onUserUpdate?: () => void;
-  onTradeUpdate?: () => void;
-  onTicketUpdate?: () => void;
+  onTradeUpdate?: (payload?: any) => void;
+  onTicketUpdate?: (payload?: any) => void;
   onDepositUpdate?: () => void;
   onWithdrawalUpdate?: () => void;
   onAuditLogUpdate?: () => void;
@@ -747,14 +802,14 @@ export const subscribeToSupabaseRealtime = (handlers: RealtimeHandlers): Realtim
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
         handlers.onUserUpdate?.();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, () => {
-        handlers.onTradeUpdate?.();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, (payload) => {
+        handlers.onTradeUpdate?.(payload);
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => {
-        handlers.onTicketUpdate?.();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, (payload) => {
+        handlers.onTicketUpdate?.(payload);
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => {
-        handlers.onTicketUpdate?.();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, (payload) => {
+        handlers.onTicketUpdate?.(payload);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deposit_requests' }, () => {
         handlers.onDepositUpdate?.();

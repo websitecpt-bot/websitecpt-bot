@@ -167,6 +167,10 @@ export const SupportModal: React.FC = () => {
       return;
     }
 
+    // The send operation reuses an open ticket or creates a fresh ticket if the
+    // customer was viewing a closed session. Switch to the saved ticket immediately.
+    if (result.ticketId) setSelectedSessionTicketId(result.ticketId);
+    setActiveView('chat');
     setInputMessage('');
     if (selectedAttachment?.previewUrl) URL.revokeObjectURL(selectedAttachment.previewUrl);
     setSelectedAttachment(null);
@@ -540,29 +544,11 @@ export const SupportModal: React.FC = () => {
             </div>
 
             {/* Bottom Bar: Read-Only when Closed with "New Chat" button per user requirement */}
-            {isCurrentSessionClosed ? (
-              <div className="bg-[#121623] border-t border-[#1f273a] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-2.5 text-xs text-slate-300">
-                  <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
-                    <Lock className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-white text-xs">This session is closed (Read-Only)</div>
-                    <div className="text-[11px] text-slate-400">You cannot send new messages in a closed session.</div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleStartLiveChat}
-                  className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 text-black font-extrabold px-5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
-                >
-                  <Plus className="w-4 h-4 font-black" />
-                  <span>New Chat</span>
-                </button>
+            {isCurrentSessionClosed && (
+              <div className="border-t border-[#1f273a] bg-[#121623] px-3 py-2 text-[11px] text-slate-300">
+                This previous session is closed. Sending a message here will automatically start a new conversation.
               </div>
-            ) : (
-              /* User Input Bar for Active Session */
+            )}
               <form
                 onSubmit={handleSend}
                 className="support-chat-composer w-full min-w-0 bg-[#121623] border-t border-[#1f273a] p-1.5 sm:p-3 flex flex-col gap-1.5 sm:gap-2 shrink-0"
@@ -633,7 +619,6 @@ export const SupportModal: React.FC = () => {
                   </button>
                 </div>
               </form>
-            )}
           </div>
         )}
 

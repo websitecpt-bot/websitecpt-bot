@@ -1,4 +1,4 @@
-﻿import {
+import {
   collection,
   doc,
   getDocs,
@@ -7,6 +7,28 @@
   deleteDoc,
 } from 'firebase/firestore';
 import { firestore } from './firebase';
+
+const removeUndefinedValues = (value: any): any => {
+  if (Array.isArray(value)) {
+    return value.map((item) => item === undefined ? null : removeUndefinedValues(item));
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, removeUndefinedValues(item)])
+    );
+  }
+  return value;
+};
+
+const withDocumentId = <T,>(id: string, value: unknown): T => {
+  if (value && typeof value === 'object') {
+    const data = value as Record<string, unknown>;
+    return { ...data, id: data.id ?? id } as T;
+  }
+  return value as T;
+};
 
 const getDatabase = () => {
   if (!firestore) {
@@ -22,7 +44,7 @@ export const saveFirebaseDocument = async <T extends object>(
 ): Promise<void> => {
   await setDoc(
     doc(getDatabase(), collectionName, documentId),
-    data,
+    removeUndefinedValues(data),
     { merge: true }
   );
 };
@@ -33,7 +55,7 @@ export const fetchFirebaseCollection = async <T>(
   const snapshot = await getDocs(
     collection(getDatabase(), collectionName)
   );
-  return snapshot.docs.map((item) => item.data() as T);
+  return snapshot.docs.map((item) => withDocumentId<T>(item.id, item.data()));
 };
 
 export const subscribeFirebaseCollection = <T>(
@@ -44,7 +66,7 @@ export const subscribeFirebaseCollection = <T>(
   return onSnapshot(
     collection(getDatabase(), collectionName),
     (snapshot) => {
-      callback(snapshot.docs.map((item) => item.data() as T));
+      callback(snapshot.docs.map((item) => withDocumentId<T>(item.id, item.data())));
     },
     (error) => {
       console.error('[Firebase Realtime]', error);

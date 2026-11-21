@@ -12,9 +12,11 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const isConfigured = Object.values(firebaseConfig).every(
+export const isFirebaseConfigured = () => Object.values(firebaseConfig).every(
   (value) => typeof value === 'string' && value.length > 0
 );
+
+const isConfigured = isFirebaseConfigured();
 
 export const firebaseApp = isConfigured
   ? getApps().length

@@ -56,7 +56,7 @@ const writeAdminSession = (authenticated: boolean) => {
   }
 };
 
-export const AdminPanel: React.FC = () => {
+export const AdminPanelFirebase: React.FC = () => {
   const {
     setActiveTab,
     supportTickets,

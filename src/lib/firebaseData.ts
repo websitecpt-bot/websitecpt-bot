@@ -200,14 +200,14 @@ export const settleFirebaseTrade = async (
         throw new Error('Enter a valid settlement percentage from 1% to 5000%.');
       }
 
-      const signedPercent = input.outcome === 'WIN' ? percent : -percent;
+      const signedPercent = effectiveOutcome === 'WIN' ? percent : -percent;
       finalPnl = Number((margin * signedPercent / 100).toFixed(2));
       finalPnlPercent = signedPercent;
       const priceMultiplier = 1 + (signedPercent / 100) / leverage;
       finalExitPrice = trade.type === 'BUY'
         ? Number((entryPrice * priceMultiplier).toFixed(entryPrice > 100 ? 2 : 4))
         : Number((entryPrice * (2 - priceMultiplier)).toFixed(entryPrice > 100 ? 2 : 4));
-      scheduledOutcome = input.outcome;
+      scheduledOutcome = effectiveOutcome;
       scheduledPercent = percent;
     } else {
       if (!Number.isFinite(finalExitPrice) || finalExitPrice <= 0) {

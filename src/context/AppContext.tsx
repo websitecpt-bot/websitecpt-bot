@@ -796,7 +796,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ] = results;
 
     if (usersResult.status === 'fulfilled') {
-      setUsers((prev) => mergeCloudItems(prev, usersResult.value.map(normalizeFirebaseUser)));
+      setUsers((prev) => mergeCloudItems(prev, usersResult.value.map((user) => normalizeFirebaseUser(user))));
     }
     if (tradesResult.status === 'fulfilled') {
       setTrades((prev) => mergeCloudItems(prev, tradesResult.value));
@@ -979,7 +979,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subscribeFirebaseCollection<User>('users', (items) => {
         if (!isMounted) return;
         usersReady = true;
-        setUsers((prev) => mergeCloudItems(prev, items.map(normalizeFirebaseUser)));
+        setUsers((prev) => mergeCloudItems(prev, items.map((user) => normalizeFirebaseUser(user))));
         setIsFirebaseSynced(usersReady && tradesReady);
       }, onError('users')),
       subscribeFirebaseCollection<Trade>('trades', (items) => {

@@ -14,7 +14,23 @@ import {
 } from 'lucide-react';
 
 export const AdminDepositsTab: React.FC = () => {
-  const { depositRequests, approveDeposit, rejectDeposit } = useApp();
+  const { depositRequests: rawDepositRequests, approveDeposit, rejectDeposit } = useApp();
+  // Older requests can lack optional fields or contain numeric values as strings.
+  const depositRequests: DepositRequest[] = (Array.isArray(rawDepositRequests) ? rawDepositRequests : [])
+    .filter((request) => Boolean(request) && typeof request === 'object')
+    .map((request, index) => ({
+      ...request,
+      id: String(request.id ?? `deposit-${index}`),
+      userName: String(request.userName ?? 'Customer'),
+      txid: String(request.txid ?? ''),
+      paymentMethod: String(request.paymentMethod ?? 'Not specified'),
+      network: String(request.network ?? ''),
+      amount: Number.isFinite(Number(request.amount)) ? Number(request.amount) : 0,
+      status: (request.status === 'approved' || request.status === 'rejected' ? request.status : 'pending') as RequestStatus,
+      timestamp: String(request.timestamp ?? ''),
+      note: request.note ? String(request.note) : undefined,
+      reviewedBy: request.reviewedBy ? String(request.reviewedBy) : undefined,
+    })) as DepositRequest[];
 
   const [statusFilter, setStatusFilter] = useState<'all' | RequestStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,9 +40,9 @@ export const AdminDepositsTab: React.FC = () => {
   const filteredDeposits = depositRequests.filter((d) => {
     const matchesFilter = statusFilter === 'all' || d.status === statusFilter;
     const matchesSearch =
-      d.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.txid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.paymentMethod.toLowerCase().includes(searchQuery.toLowerCase());
+      String(d.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(d.txid || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(d.paymentMethod || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesFilter && matchesSearch;
   });
 

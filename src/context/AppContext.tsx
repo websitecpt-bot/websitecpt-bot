@@ -610,6 +610,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return Array.from(merged.values());
   };
 
+  const normalizeFirebaseUser = (value: any): User => ({
+    ...value,
+    id: String(value?.id || ''),
+    uid: String(value?.uid || ''),
+    name: String(value?.name || 'Unknown Customer'),
+    email: String(value?.email || ''),
+    phone: value?.phone ? String(value.phone) : undefined,
+    tradingBalance: Number(value?.tradingBalance || 0),
+    fundingBalance: Number(value?.fundingBalance || 0),
+    status: value?.status === 'suspended' || value?.status === 'archived' ? value.status : 'active',
+    isOnline: Boolean(value?.isOnline),
+    createdAt: String(value?.createdAt || ''),
+    lastLogin: String(value?.lastLogin || ''),
+  });
+
   const normalizeSupportTicket = (value: any): SupportTicket => ({
     ...value,
     id: String(value?.id || ''),
@@ -639,7 +654,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchFirebaseCollection<SupportTicket>('supportTickets'),
     ]);
 
-    if (results[0].status === 'fulfilled') setUsers((prev) => mergeCloudItems(prev, results[0].value));
+    if (results[0].status === 'fulfilled') setUsers((prev) => mergeCloudItems(prev, results[0].value.map(normalizeFirebaseUser)));
     if (results[1].status === 'fulfilled') setTrades((prev) => mergeCloudItems(prev, results[1].value));
     if (results[2].status === 'fulfilled') setDepositRequests((prev) => mergeCloudItems(prev, results[2].value));
     if (results[3].status === 'fulfilled') setWithdrawalRequests((prev) => mergeCloudItems(prev, results[3].value));
@@ -686,7 +701,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subscribeFirebaseCollection<User>('users', (items) => {
         if (!isMounted) return;
         usersReady = true;
-        setUsers((prev) => mergeCloudItems(prev, items));
+        setUsers((prev) => mergeCloudItems(prev, items.map(normalizeFirebaseUser)));
         setIsFirebaseSynced(usersReady && tradesReady);
       }, onError('users')),
       subscribeFirebaseCollection<Trade>('trades', (items) => {

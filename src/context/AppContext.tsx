@@ -36,6 +36,7 @@ import { isFirebaseConfigured } from '../lib/firebase';
 interface AppContextType {
   // Firebase Cloud Sync
   refreshAllFromFirebase: () => Promise<void>;
+  migrateCachedDataToFirebase: () => Promise<{ success: boolean; summary: string }>;
   isFirebaseSynced: boolean;
 
   // Current user & Auth
@@ -719,6 +720,100 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('[Firebase Cloud Sync] Collection load failed:', ['users', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'supportTickets', 'marketCoins', 'marketSettings', 'systemSettings'][index], result.reason);
       }
     });
+  };
+
+  /**
+   * Backfill this browser's retained legacy cache into Firebase without overwriting
+   * documents already present in Firestore. Password fields are never uploaded.
+   */
+  const migrateCachedDataToFirebase = async (): Promise<{ success: boolean; summary: string }> => {
+    if (!isFirebaseConfigured()) {
+      return { success: false, summary: 'Firebase is not configured. No legacy records were copied.' };
+    }
+
+    try {
+      const remoteUsers = await fetchFirebaseCollection<User>('users');
+      const byId = new Map(remoteUsers.map((user) => [String(user.id), user]));
+      const byEmail = new Map(remoteUsers.map((user) => [String(user.email || '').trim().toLowerCase(), user]));
+      const byUid = new Map(remoteUsers.map((user) => [String(user.uid || ''), user]));
+      const userIdMap = new Map<string, string>();
+      const counts = { users: 0, trades: 0, deposits: 0, withdrawals: 0, support: 0, adjustments: 0, audit: 0 };
+      const failures: string[] = [];
+      const skippedDemoIds = new Set(['user-518294', 'user-739102', 'user-394821']);
+
+      for (const user of users) {
+        if (!user?.id || skippedDemoIds.has(user.id)) continue;
+        const emailKey = String(user.email || '').trim().toLowerCase();
+        const uidKey = String(user.uid || '');
+        const existing = byId.get(user.id) || (emailKey ? byEmail.get(emailKey) : undefined) || (uidKey ? byUid.get(uidKey) : undefined);
+        if (existing) {
+          userIdMap.set(user.id, existing.id);
+          continue;
+        }
+
+        const { password: _legacyPassword, ...safeProfile } = user;
+        try {
+          await saveFirebaseDocument('users', user.id, safeProfile);
+          byId.set(user.id, safeProfile as User);
+          if (emailKey) byEmail.set(emailKey, safeProfile as User);
+          if (uidKey) byUid.set(uidKey, safeProfile as User);
+          userIdMap.set(user.id, user.id);
+          counts.users += 1;
+        } catch (error) {
+          failures.push(`user ${user.email || user.id}: ${error instanceof Error ? error.message : 'save failed'}`);
+        }
+      }
+
+      const migrateMissing = async <T extends { id: string; userId?: string }>(
+        collectionName: string,
+        items: T[],
+        countKey: keyof typeof counts,
+        transform: (item: T) => Record<string, unknown> = (item) => item as Record<string, unknown>
+      ) => {
+        const existing = await fetchFirebaseCollection<T>(collectionName);
+        const knownIds = new Set(existing.map((item) => String(item.id)));
+        for (const item of items) {
+          if (!item?.id || knownIds.has(item.id)) continue;
+          const mappedUserId = item.userId ? (userIdMap.get(item.userId) || item.userId) : undefined;
+          const migrated = transform({
+            ...item,
+            ...(mappedUserId ? { userId: mappedUserId } : {}),
+          } as T);
+          // Firestore documents have a 1 MiB hard limit; skip oversized chat records safely.
+          if (new TextEncoder().encode(JSON.stringify(migrated)).length > 900000) {
+            failures.push(`${collectionName}/${item.id}: too large for a single Firestore document`);
+            continue;
+          }
+          try {
+            await saveFirebaseDocument(collectionName, item.id, migrated);
+            knownIds.add(item.id);
+            counts[countKey] += 1;
+          } catch (error) {
+            failures.push(`${collectionName}/${item.id}: ${error instanceof Error ? error.message : 'save failed'}`);
+          }
+        }
+      };
+
+      await migrateMissing('trades', trades, 'trades', (item) => ({ ...item }));
+      await migrateMissing('deposits', depositRequests, 'deposits', (item) => ({ ...item }));
+      await migrateMissing('withdrawals', withdrawalRequests, 'withdrawals', (item) => ({ ...item }));
+      await migrateMissing('supportTickets', supportTickets, 'support', (item) => ({
+        ...item,
+        messages: Array.isArray((item as SupportTicket).messages) ? (item as SupportTicket).messages : [],
+      }));
+      await migrateMissing('balanceAdjustments', balanceAdjustments, 'adjustments', (item) => ({ ...item }));
+      await migrateMissing('auditLogs', auditLogs, 'audit', (item) => ({ ...item }));
+
+      const summary = [
+        `Copied missing records: ${counts.users} users, ${counts.trades} trades, ${counts.deposits} deposits, ${counts.withdrawals} withdrawals, ${counts.support} support tickets, ${counts.adjustments} balance adjustments, ${counts.audit} audit logs.`,
+        'Existing Firebase documents were left unchanged. Legacy passwords were not copied.',
+        failures.length ? `Items not copied: ${failures.length}. First issue: ${failures[0]}` : 'No item-level errors were reported.',
+      ].join(' ');
+      return { success: failures.length === 0, summary };
+    } catch (error) {
+      console.error('[Firebase Legacy Backfill] Failed:', error);
+      return { success: false, summary: error instanceof Error ? error.message : 'Could not read the local cache or Firebase collections.' };
+    }
   };
 
   useEffect(() => {
@@ -2512,6 +2607,7 @@ if (!save.success) {
     <AppContext.Provider
       value={{
         refreshAllFromFirebase,
+        migrateCachedDataToFirebase,
         isFirebaseSynced,
         users,
         currentUser,

@@ -56,7 +56,8 @@ import {
   supabaseAuthSignIn,
 } from '../lib/supabase';
 import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
-import { saveFirebaseDocument } from '../lib/firebaseData';
+import { saveFirebaseDocument, deleteFirebaseDocument } from '../lib/firebaseData';
+import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
   // Supabase Cloud Sync
@@ -1557,8 +1558,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetCoin = coins.find((c) => c.symbol === symbol);
     if (!targetCoin) return { success: false, message: 'Invalid symbol.' };
 
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Secure cloud connection is unavailable. Your trade was not opened. Please contact Support.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase cloud connection is unavailable. Your trade was not opened. Please contact Support.' };
     }
 
     const nextTradingBalance = Number((currentUser.tradingBalance - totalDeduction).toFixed(2));
@@ -1590,30 +1591,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fee,
     };
 
-    // Require the shared database to confirm both writes before showing success locally.
-    if (isSupabaseConfigured()) {
-      const balanceSave = await updateUserBalanceInSupabase(currentUser.id, nextTradingBalance, currentUser.fundingBalance);
-      if (!balanceSave.success) {
-        return { success: false, message: `Trade not opened: Trading Balance could not be saved to the cloud. ${balanceSave.error || ''}`.trim() };
-      }
-      const tradeSave = await syncTradeToSupabase(newTrade);
-      if (!tradeSave.success) {
-        const rollback = await updateUserBalanceInSupabase(currentUser.id, currentUser.tradingBalance, currentUser.fundingBalance);
-        console.error('[Trade] Cloud trade save failed; balance rollback:', rollback.success, tradeSave.error);
-        return { success: false, message: `Trade not opened because cloud saving failed. ${tradeSave.error || ''}`.trim() };
-      }
-    }
-
-    // Firebase trade sync
+    // Firebase is the source of truth for opening trades. Do not report success
+    // or change local balances unless both cloud writes complete.
     try {
       await saveFirebaseDocument('trades', newTrade.id, newTrade);
       await saveFirebaseDocument('users', currentUser.id, {
         tradingBalance: nextTradingBalance,
         fundingBalance: currentUser.fundingBalance,
       });
-      console.log('[Firebase Trade Sync] Trade and balance saved.');
     } catch (firebaseError) {
-      console.error('[Firebase Trade Sync] Save failed:', firebaseError);
+      try {
+        await deleteFirebaseDocument('trades', newTrade.id);
+      } catch (rollbackError) {
+        console.error('[Firebase Trade] Could not remove incomplete trade:', rollbackError);
+      }
+      console.error('[Firebase Trade] Save failed:', firebaseError);
+      return {
+        success: false,
+        message: 'Trade not opened because Firebase could not save the trade and balance. No local balance was deducted. Please try again or contact Support.',
+      };
     }
 
     setUsers((prev) => prev.map((u) => u.id === currentUser.id ? { ...u, tradingBalance: nextTradingBalance } : u));

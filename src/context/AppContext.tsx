@@ -563,8 +563,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorageSet('marketDataMode', marketDataMode);
   }, [marketDataMode]);
 
-  // Keep the application and Admin portal usable if a device has a stale empty local users cache.
-  const currentUser = users.find((u) => u.id === currentUserId) || users[0] || initialUsers.find((u) => u.role === 'superadmin') || initialUsers[0];
+  // Resolve the signed-in account by its stable ID only. Never show another
+  // customer's first row as the current user's identity when a profile is delayed.
+  const currentUserRecord = users.find((user) => user.id === currentUserId) ||
+    initialUsers.find((user) => user.id === currentUserId);
+  const currentUserTicket = supportTickets
+    .filter((ticket) => ticket.userId === currentUserId && hasUsableCustomerLabel(ticket.userName))
+    .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime())[0];
+  const currentUserTrade = trades
+    .filter((trade) => trade.userId === currentUserId && hasUsableCustomerLabel(trade.userName))
+    .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime())[0];
+  const inferredCurrentUid = currentUserId.match(/^user[-_](\d+)$/)?.[1] || '';
+  const currentUser: User = currentUserRecord || (currentUserId ? {
+    id: currentUserId,
+    uid: inferredCurrentUid,
+    name: currentUserTicket?.userName || currentUserTrade?.userName || 'Account profile syncing',
+    email: currentUserTicket?.userEmail || '',
+    tradingBalance: 0,
+    fundingBalance: 0,
+    status: 'active',
+    isOnline: false,
+    createdAt: '',
+    lastLogin: '',
+  } : initialUsers[0]);
   const isSuperAdmin =
     currentUser.role === 'superadmin' ||
     currentUser.email === 'ripuworkshop@gmail.com' ||

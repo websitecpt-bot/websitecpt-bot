@@ -1918,8 +1918,8 @@ if (failed) {
     const targetTicket = supportTickets.find((ticket) => ticket.id === ticketId);
     setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
     {
-      void deleteFirebaseDocument('supportTickets', ticketId).then((result) => {
-        if (!result.success) console.error('[Support] Ticket deletion was not saved:', result.error);
+      void deleteFirebaseDocument('supportTickets', ticketId).catch((error) => {
+        console.error('[Firebase Support] Ticket deletion failed:', error);
       });
     }
     logAuditAction(

@@ -22,13 +22,63 @@ export const AdminDashboardTab: React.FC<{
   onNavigate: (tab: string) => void;
 }> = ({ onNavigate }) => {
   const {
-    users,
-    trades,
-    supportTickets,
-    depositRequests,
-    withdrawalRequests,
-    auditLogs,
+    users: rawUsers,
+    trades: rawTrades,
+    supportTickets: rawSupportTickets,
+    depositRequests: rawDepositRequests,
+    withdrawalRequests: rawWithdrawalRequests,
+    auditLogs: rawAuditLogs,
   } = useApp();
+
+  // Defensive normalization: older/local records may have missing or malformed fields.
+  // Keep the Admin dashboard readable instead of allowing one incomplete record to crash it.
+  const asNumber = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const users = (Array.isArray(rawUsers) ? rawUsers : [])
+    .filter((user) => user && typeof user === 'object')
+    .map((user) => ({
+      ...user,
+      name: String(user.name ?? ''),
+      email: String(user.email ?? ''),
+      uid: String(user.uid ?? ''),
+      createdAt: String(user.createdAt ?? ''),
+      status: String(user.status ?? ''),
+      tradingBalance: asNumber(user.tradingBalance),
+    }));
+  const trades = (Array.isArray(rawTrades) ? rawTrades : [])
+    .filter((trade) => trade && typeof trade === 'object')
+    .map((trade) => ({
+      ...trade,
+      status: String(trade.status ?? ''),
+      userName: String(trade.userName ?? 'Customer'),
+      symbol: String(trade.symbol ?? ''),
+      openedAt: String(trade.openedAt ?? ''),
+      entryPrice: asNumber(trade.entryPrice),
+      margin: asNumber(trade.margin),
+      pnl: asNumber(trade.pnl),
+      pnlPercent: asNumber(trade.pnlPercent),
+    }));
+  const supportTickets = (Array.isArray(rawSupportTickets) ? rawSupportTickets : [])
+    .filter((ticket) => ticket && typeof ticket === 'object')
+    .map((ticket) => ({ ...ticket, status: String(ticket.status ?? '') }));
+  const depositRequests = (Array.isArray(rawDepositRequests) ? rawDepositRequests : [])
+    .filter((request) => request && typeof request === 'object')
+    .map((request) => ({ ...request, status: String(request.status ?? '') }));
+  const withdrawalRequests = (Array.isArray(rawWithdrawalRequests) ? rawWithdrawalRequests : [])
+    .filter((request) => request && typeof request === 'object')
+    .map((request) => ({ ...request, status: String(request.status ?? '') }));
+  const auditLogs = (Array.isArray(rawAuditLogs) ? rawAuditLogs : [])
+    .filter((log) => log && typeof log === 'object')
+    .map((log) => ({
+      ...log,
+      action: String(log.action ?? ''),
+      target: String(log.target ?? ''),
+      details: String(log.details ?? ''),
+      adminName: String(log.adminName ?? ''),
+      timestamp: String(log.timestamp ?? ''),
+    }));
 
   const [signupSearch, setSignupSearch] = useState('');
   const [showAuditModal, setShowAuditModal] = useState(false);

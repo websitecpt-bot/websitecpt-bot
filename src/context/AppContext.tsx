@@ -48,7 +48,6 @@ import {
   updateWithdrawalStatusInSupabase,
   syncAuditLogToSupabase,
   subscribeToSupabaseRealtime,
-  supabaseAuthSignUp,
   supabaseAuthSignIn,
 } from '../lib/supabase';
 import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
@@ -1042,8 +1041,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     password?: string;
     referralCode?: string;
   }) => {
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'The shared customer database is unavailable. Your account was not created. Please contact Support.' };
+    if (import.meta.env.PROD && !isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Authentication is unavailable. Your account was not created. Please try again later.' };
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -1195,6 +1194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginUser = async (identifier: string, password?: string) => {
     const clean = identifier.trim().toLowerCase();
+    let firebaseFound: User | undefined;
 
     // Firebase user profiles keep login working even when Supabase is restricted.
     if (isFirebaseConfigured()) {
@@ -1207,7 +1207,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return Array.from(merged.values());
           });
           const match = firebaseUsers.find((u) => u.name.toLowerCase() === clean || u.email.toLowerCase() === clean || u.uid === clean);
-          if (match) setUsers((prev) => [match, ...prev.filter((u) => u.id !== match.id)]);
+          if (match) {
+            firebaseFound = match;
+            setUsers((prev) => [match, ...prev.filter((u) => u.id !== match.id)]);
+          }
         }
       } catch (err) {
         console.warn('[Firebase users lookup]', err);
@@ -1226,7 +1229,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    let found = users.find(
+    let found = firebaseFound || users.find(
       (u) =>
         u.name.toLowerCase() === clean ||
         u.email.toLowerCase() === clean ||

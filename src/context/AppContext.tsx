@@ -2082,7 +2082,10 @@ if (!save.success) {
 
     const finalTrading = isFunding ? targetUser.tradingBalance : newBalance;
     const finalFunding = isFunding ? newBalance : targetUser.fundingBalance;
-    updateUserBalanceInSupabase(userId, finalTrading, finalFunding);
+    void saveFirebaseDocument('users', userId, {
+      tradingBalance: finalTrading,
+      fundingBalance: finalFunding,
+    }).catch((error) => console.warn('[Firebase Balance] Adjustment sync failed:', error));
 
     const adjustment: BalanceAdjustment = {
       id: `adj-${Date.now()}`,
@@ -2099,6 +2102,8 @@ if (!save.success) {
     };
 
     setBalanceAdjustments((prev) => [adjustment, ...prev]);
+    void saveFirebaseDocument('balanceAdjustments', adjustment.id, adjustment)
+      .catch((error) => console.warn('[Firebase Balance] Adjustment history sync failed:', error));
 
     logAuditAction(
       'BALANCE_ADJUSTMENT',
@@ -2121,8 +2126,8 @@ if (!save.success) {
     network?: string;
     note?: string;
   }): Promise<{ success: boolean; message: string }> => {
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Cloud connection is unavailable. The deposit request was not submitted.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase connection is unavailable. The deposit request was not submitted.' };
     }
     const newReq: DepositRequest = {
       id: `dep-${Date.now().toString().slice(-6)}`,
@@ -2136,12 +2141,11 @@ if (!save.success) {
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       note,
     };
-    if (isSupabaseConfigured()) {
-      const saved = await syncDepositToSupabase(newReq);
-      if (!saved.success) {
-        console.error('[Deposit] Cloud save failed:', saved.error);
-        return { success: false, message: `Deposit request was not submitted. ${saved.error || ''}`.trim() };
-      }
+    try {
+      await saveFirebaseDocument('deposits', newReq.id, newReq);
+    } catch (error) {
+      console.error('[Firebase Deposit] Cloud save failed:', error);
+      return { success: false, message: 'Deposit request was not submitted because Firebase could not save it. Please retry.' };
     }
     setDepositRequests((prev) => [newReq, ...prev]);
     return { success: true, message: 'Deposit request submitted and saved for Admin review.' };
@@ -2163,7 +2167,15 @@ if (!save.success) {
           : d
       )
     );
-    updateDepositStatusInSupabase(depositId, 'approved');
+    const approvedRequest = depositRequests.find((request) => request.id === depositId);
+    if (approvedRequest) {
+      void saveFirebaseDocument('deposits', depositId, {
+        ...approvedRequest,
+        status: 'approved',
+        reviewedBy: adminName,
+        reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      }).catch((error) => console.warn('[Firebase Deposit] Approval sync failed:', error));
+    }
 
     adjustUserBalance({
       userId: dep.userId,
@@ -2187,7 +2199,16 @@ if (!save.success) {
           : d
       )
     );
-    updateDepositStatusInSupabase(depositId, 'rejected');
+    const rejectedRequest = depositRequests.find((request) => request.id === depositId);
+    if (rejectedRequest) {
+      void saveFirebaseDocument('deposits', depositId, {
+        ...rejectedRequest,
+        status: 'rejected',
+        note: note || rejectedRequest.note,
+        reviewedBy: adminName,
+        reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      }).catch((error) => console.warn('[Firebase Deposit] Rejection sync failed:', error));
+    }
     const dep = depositRequests.find((d) => d.id === depositId);
     logAuditAction(
       'DEPOSIT_REJECTED',
@@ -2226,8 +2247,8 @@ if (!save.success) {
     if (available < amount) {
       return { success: false, message: `Insufficient ${isFunding ? 'Funding' : 'Trading'} balance ($${available.toFixed(2)} available).` };
     }
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Cloud connection is unavailable. The withdrawal was not submitted and no balance was deducted.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase connection is unavailable. The withdrawal was not submitted and no balance was deducted.' };
     }
 
     const oldFunding = currentUser.fundingBalance || 0;
@@ -2249,17 +2270,23 @@ if (!save.success) {
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
 
-    if (isSupabaseConfigured()) {
-      const balanceSave = await updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
-      if (!balanceSave.success) {
-        return { success: false, message: `Withdrawal not submitted: balance could not be saved. ${balanceSave.error || ''}`.trim() };
+    try {
+      await saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: newTrading,
+        fundingBalance: newFunding,
+      });
+      await saveFirebaseDocument('withdrawals', newReq.id, newReq);
+    } catch (error) {
+      try {
+        await saveFirebaseDocument('users', currentUser.id, {
+          tradingBalance: oldTrading,
+          fundingBalance: oldFunding,
+        });
+      } catch (rollbackError) {
+        console.error('[Firebase Withdrawal] Balance rollback failed:', rollbackError);
       }
-      const requestSave = await syncWithdrawalToSupabase(newReq);
-      if (!requestSave.success) {
-        const rollback = await updateUserBalanceInSupabase(currentUser.id, oldTrading, oldFunding);
-        console.error('[Withdrawal] Request save failed; balance rollback:', rollback.success, requestSave.error);
-        return { success: false, message: `Withdrawal not submitted because cloud saving failed. ${requestSave.error || ''}`.trim() };
-      }
+      console.error('[Firebase Withdrawal] Cloud save failed:', error);
+      return { success: false, message: 'Withdrawal was not submitted because Firebase could not save the request. The balance rollback was attempted.' };
     }
 
     setUsers((prev) => prev.map((u) => u.id === currentUser.id
@@ -2294,7 +2321,12 @@ if (!save.success) {
           : w
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'approved');
+    void saveFirebaseDocument('withdrawals', withdrawalId, {
+      ...wth,
+      status: 'approved',
+      reviewedBy: adminName,
+      reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    }).catch((error) => console.warn('[Firebase Withdrawal] Approval sync failed:', error));
 
     logAuditAction(
       'WITHDRAWAL_APPROVED',
@@ -2324,7 +2356,10 @@ if (!save.success) {
           : u
       )
     );
-    updateUserBalanceInSupabase(wth.userId, refundedTrading, refundedFunding);
+    void saveFirebaseDocument('users', wth.userId, {
+      tradingBalance: refundedTrading,
+      fundingBalance: refundedFunding,
+    }).catch((error) => console.warn('[Firebase Withdrawal] Refund balance sync failed:', error));
 
     setWithdrawalRequests((prev) =>
       prev.map((w) =>
@@ -2340,7 +2375,14 @@ if (!save.success) {
           : w
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'rejected', reason);
+    void saveFirebaseDocument('withdrawals', withdrawalId, {
+      ...wth,
+      status: 'rejected',
+      rejectReason: reason,
+      notes: reason,
+      reviewedBy: adminName,
+      reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    }).catch((error) => console.warn('[Firebase Withdrawal] Rejection sync failed:', error));
 
     logAuditAction(
       'WITHDRAWAL_REJECTED',
@@ -2360,11 +2402,8 @@ if (!save.success) {
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
     setAuditLogs((prev) => [newLog, ...prev]);
-    if (isSupabaseConfigured()) {
-      void syncAuditLogToSupabase(newLog).then((result) => {
-        if (!result.success) console.error('[Audit] Activity log was not saved:', result.error);
-      });
-    }
+    void saveFirebaseDocument('auditLogs', newLog.id, newLog)
+      .catch((error) => console.error('[Firebase Audit] Activity log was not saved:', error));
   };
 
   const adminTransferFunds = ({ userId, amount, reason }: { userId: string; amount: number; reason: string }) => {
@@ -2380,7 +2419,10 @@ if (!save.success) {
     const newTrading = Number((oldTrading + amount).toFixed(2));
 
     setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, fundingBalance: newFunding, tradingBalance: newTrading } : u));
-    updateUserBalanceInSupabase(userId, newTrading, newFunding);
+    void saveFirebaseDocument('users', userId, {
+      tradingBalance: newTrading,
+      fundingBalance: newFunding,
+    }).catch((error) => console.warn('[Firebase Balance] Admin transfer sync failed:', error));
 
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
     const entries: BalanceAdjustment[] = [
@@ -2388,6 +2430,10 @@ if (!save.success) {
       { id: `adj-${Date.now()}-trading`, userId, userName: target.name, amount, type: 'correction', previousBalance: oldTrading, newBalance: newTrading, reason: `[Admin Transfer: Funding → Trading] ${reason}`, adminId: 'admin-01', adminName, timestamp },
     ];
     setBalanceAdjustments((prev) => [...entries, ...prev]);
+    entries.forEach((entry) => {
+      void saveFirebaseDocument('balanceAdjustments', entry.id, entry)
+        .catch((error) => console.warn('[Firebase Balance] Admin transfer history sync failed:', error));
+    });
     logAuditAction('ADMIN_WALLET_TRANSFER', `${target.name} (${target.uid})`, `Transferred ${amount.toFixed(2)} from Funding Wallet to Trading Wallet. Reason: ${reason}`);
     return { success: true, message: `Transferred ${amount.toFixed(2)} from Funding to Trading for ${target.name}.` };
   };
@@ -2434,8 +2480,10 @@ if (!save.success) {
         )
       );
 
-      // Persist to Supabase immediately so background sync/realtime preserves the new balances
-      updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+      void saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: newTrading,
+        fundingBalance: newFunding,
+      }).catch((error) => console.warn('[Firebase Balance] Wallet transfer sync failed:', error));
 
       logAuditAction(
         'WALLET_TRANSFER',
@@ -2469,8 +2517,10 @@ if (!save.success) {
         )
       );
 
-      // Persist to Supabase immediately so background sync/realtime preserves the new balances
-      updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+      void saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: newTrading,
+        fundingBalance: newFunding,
+      }).catch((error) => console.warn('[Firebase Balance] Wallet transfer sync failed:', error));
 
       logAuditAction(
         'WALLET_TRANSFER',

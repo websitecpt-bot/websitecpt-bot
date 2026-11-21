@@ -189,7 +189,7 @@ export const settleFirebaseTrade = async (
         ? trade.scheduledOutcome
         : input.outcome;
     const effectivePercent = input.outcome === 'MARKET'
-      ? Number(trade.scheduledPercent)
+      ? Number(trade.scheduledPercent ?? (trade.scheduledOutcome === 'WIN' ? 35 : 100))
       : Number(input.percent);
     let scheduledOutcome: 'WIN' | 'LOSS' | null = effectiveOutcome === 'MARKET' ? null : effectiveOutcome;
     let scheduledPercent: number | undefined = effectiveOutcome === 'MARKET' ? undefined : effectivePercent;

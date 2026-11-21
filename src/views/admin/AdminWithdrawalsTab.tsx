@@ -13,7 +13,27 @@ import {
 } from 'lucide-react';
 
 export const AdminWithdrawalsTab: React.FC = () => {
-  const { withdrawalRequests, approveWithdrawal, rejectWithdrawal } = useApp();
+  const { withdrawalRequests: rawWithdrawalRequests, approveWithdrawal, rejectWithdrawal } = useApp();
+  // Normalize legacy payout requests so incomplete fields cannot crash Admin rendering.
+  const withdrawalRequests: WithdrawalRequest[] = (Array.isArray(rawWithdrawalRequests) ? rawWithdrawalRequests : [])
+    .filter((request) => Boolean(request) && typeof request === 'object')
+    .map((request, index) => ({
+      ...request,
+      id: String(request.id ?? `withdrawal-${index}`),
+      userId: String(request.userId ?? ''),
+      userName: String(request.userName ?? 'Customer'),
+      amount: Number.isFinite(Number(request.amount)) ? Number(request.amount) : 0,
+      accountHolderName: String(request.accountHolderName ?? ''),
+      bankOrAddress: String(request.bankOrAddress ?? ''),
+      network: String(request.network ?? ''),
+      withdrawalType: request.withdrawalType === 'USDT' ? 'USDT' : 'USD',
+      status: (request.status === 'approved' || request.status === 'rejected' ? request.status : 'pending') as RequestStatus,
+      timestamp: String(request.timestamp ?? ''),
+      notes: request.notes ? String(request.notes) : undefined,
+      rejectReason: request.rejectReason ? String(request.rejectReason) : undefined,
+      reviewedBy: request.reviewedBy ? String(request.reviewedBy) : undefined,
+      sourceWallet: request.sourceWallet === 'trading' ? 'trading' : request.sourceWallet === 'funding' ? 'funding' : undefined,
+    })) as WithdrawalRequest[];
 
   const [statusFilter, setStatusFilter] = useState<'all' | RequestStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,10 +78,10 @@ export const AdminWithdrawalsTab: React.FC = () => {
   const filteredWithdrawals = withdrawalRequests.filter((w) => {
     const matchesFilter = statusFilter === 'all' || w.status === statusFilter;
     const matchesSearch =
-      w.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      w.accountHolderName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      w.bankOrAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      w.network.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(w.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(w.accountHolderName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(w.bankOrAddress || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(w.network || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (w.notes || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (w.id || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesFilter && matchesSearch;

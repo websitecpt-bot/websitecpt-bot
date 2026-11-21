@@ -532,6 +532,10 @@ export const AdminLiveTradingTab: React.FC = () => {
               );
             })()}
 
+            <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-[10px] leading-relaxed text-cyan-100">
+              When this box is unchecked, the selected percentage is only scheduled and the balance changes when the trade timer expires. Tick it to settle the trade immediately.
+            </div>
+
             {/* Immediate Execution Option */}
             <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 bg-[#161c2a] p-2.5 rounded-xl border border-[#222a3d]">
               <input

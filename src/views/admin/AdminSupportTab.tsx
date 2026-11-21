@@ -23,7 +23,7 @@ import { compressImageFile } from '../../utils/imageCompressor';
 
 export const AdminSupportTab: React.FC = () => {
   const {
-    supportTickets,
+    supportTickets: rawSupportTickets,
     sendAdminReply,
     addSupportSystemNotification,
     updateTicketStatus,
@@ -32,13 +32,44 @@ export const AdminSupportTab: React.FC = () => {
     deleteSupportTicket,
     editSupportMessage,
     deleteSupportMessageForEveryone,
-    activeSupportUsers,
+    activeSupportUsers: rawActiveSupportUsers,
   } = useApp();
+
+  // Normalize older/partial cloud records before rendering the inbox.
+  const supportTickets: SupportTicket[] = (Array.isArray(rawSupportTickets) ? rawSupportTickets : [])
+    .filter((ticket) => Boolean(ticket) && typeof ticket === 'object')
+    .map((ticket, ticketIndex) => ({
+      ...ticket,
+      id: String(ticket.id ?? `support-${ticketIndex}`),
+      userId: String(ticket.userId ?? ''),
+      userName: String(ticket.userName ?? 'Customer'),
+      userEmail: String(ticket.userEmail ?? ''),
+      status: (ticket.status === 'answered' || ticket.status === 'closed' ? ticket.status : 'pending') as TicketStatus,
+      isSessionClosed: Boolean(ticket.isSessionClosed),
+      lastMessage: String(ticket.lastMessage ?? ''),
+      lastMessageTime: String(ticket.lastMessageTime ?? ''),
+      unreadAdminCount: Number.isFinite(Number(ticket.unreadAdminCount)) ? Number(ticket.unreadAdminCount) : 0,
+      unreadUserCount: Number.isFinite(Number(ticket.unreadUserCount)) ? Number(ticket.unreadUserCount) : 0,
+      messages: (Array.isArray(ticket.messages) ? ticket.messages : [])
+        .filter((message) => Boolean(message) && typeof message === 'object')
+        .map((message, messageIndex) => ({
+          ...message,
+          id: String(message.id ?? `message-${ticketIndex}-${messageIndex}`),
+          sender: String(message.sender ?? 'user'),
+          senderName: String(message.senderName ?? 'Customer'),
+          timestamp: String(message.timestamp ?? ''),
+          text: String(message.text ?? ''),
+          attachmentUrl: message.attachmentUrl ? String(message.attachmentUrl) : undefined,
+          attachmentName: message.attachmentName ? String(message.attachmentName) : undefined,
+          attachmentType: message.attachmentType === 'image' || message.attachmentType === 'file' ? message.attachmentType : undefined,
+        })),
+    })) as SupportTicket[];
+  const activeSupportUsers = Array.isArray(rawActiveSupportUsers) ? rawActiveSupportUsers : [];
 
   const [chatStatusFilter, setChatStatusFilter] = useState<'open' | 'closed'>('open');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTicketId, setSelectedTicketId] = useState<string>(() => {
-    return supportTickets[0]?.id || '';
+    return (Array.isArray(rawSupportTickets) ? rawSupportTickets[0]?.id : '') || '';
   });
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [replyText, setReplyText] = useState('');
@@ -92,8 +123,8 @@ export const AdminSupportTab: React.FC = () => {
   const filteredTickets = statusFilteredTickets.filter((t) => {
     const q = searchQuery.toLowerCase();
     return (
-      t.userName.toLowerCase().includes(q) ||
-      t.userEmail.toLowerCase().includes(q) ||
+      String(t.userName || '').toLowerCase().includes(q) ||
+      String(t.userEmail || '').toLowerCase().includes(q) ||
       (t.lastMessage && t.lastMessage.toLowerCase().includes(q))
     );
   });

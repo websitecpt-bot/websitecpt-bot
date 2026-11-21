@@ -568,10 +568,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const currentUserRecord = users.find((user) => user.id === currentUserId) ||
     initialUsers.find((user) => user.id === currentUserId);
   const currentUserTicket = supportTickets
-    .filter((ticket) => ticket.userId === currentUserId && typeof ticket.userName === 'string' && Boolean(ticket.userName.trim()) && !/^(unknown customer|unknown user|customer|unknown)$/i.test(ticket.userName.trim()))
+    .filter((ticket) => ticket.userId === currentUserId && typeof ticket.userName === 'string' && Boolean(ticket.userName.trim()) && !/^(unknown customer|unknown user|customer|unknown|customer profile syncing|account profile syncing)$/i.test(ticket.userName.trim()))
     .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime())[0];
   const currentUserTrade = trades
-    .filter((trade) => trade.userId === currentUserId && typeof trade.userName === 'string' && Boolean(trade.userName.trim()) && !/^(unknown customer|unknown user|customer|unknown)$/i.test(trade.userName.trim()))
+    .filter((trade) => trade.userId === currentUserId && typeof trade.userName === 'string' && Boolean(trade.userName.trim()) && !/^(unknown customer|unknown user|customer|unknown|customer profile syncing|account profile syncing)$/i.test(trade.userName.trim()))
     .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime())[0];
   const inferredCurrentUid = currentUserId.match(/^user[-_](\d+)$/)?.[1] || '';
   const currentUser: User = currentUserRecord || (currentUserId ? {
@@ -653,7 +653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const hasUsableCustomerLabel = (value: unknown): value is string => {
     if (typeof value !== 'string') return false;
     const clean = value.trim();
-    return Boolean(clean) && !/^(unknown customer|unknown user|customer|unknown)$/i.test(clean);
+    return Boolean(clean) && !/^(unknown customer|unknown user|customer|unknown|customer profile syncing|account profile syncing)$/i.test(clean);
   };
 
   const normalizeFirebaseUser = (

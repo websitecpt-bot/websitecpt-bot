@@ -48,7 +48,6 @@ import {
   updateWithdrawalStatusInSupabase,
   syncAuditLogToSupabase,
   subscribeToSupabaseRealtime,
-  supabaseAuthSignIn,
 } from '../lib/supabase';
 import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
 import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection } from '../lib/firebaseData';
@@ -1270,21 +1269,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'This account has no registered email address.' };
       }
 
-      let legacyAuthVerified = false;
-
-      if (isSupabaseConfigured()) {
-        try {
-          const legacyAuth = await supabaseAuthSignIn(found.email, password);
-          legacyAuthVerified = !legacyAuth.error && Boolean(legacyAuth.data?.user);
-        } catch (legacyError) {
-          console.warn('[Legacy login verification]', legacyError);
-        }
-      }
-
-      // Preserve the existing legacy-profile password check during migration.
-      if (!legacyAuthVerified && found.password && password === found.password) {
-        legacyAuthVerified = true;
-      }
+      // Authentication is Firebase-only. For a legacy profile not yet migrated,
+      // verify its locally stored legacy password before creating its Firebase Auth account.
+      // No Supabase Auth request is made here.
+      const legacyAuthVerified = Boolean(found.password && password === found.password);
 
       try {
         const firebaseResult = await loginOrMigrateWithFirebase(

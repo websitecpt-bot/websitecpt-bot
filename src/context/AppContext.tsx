@@ -1081,7 +1081,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const exists = users.some(
-      (u) => u.email.toLowerCase() === cleanEmail || u.name.toLowerCase() === cleanName.toLowerCase()
+      (u) => String(u.email || '').toLowerCase() === cleanEmail || String(u.name || '').toLowerCase() === cleanName.toLowerCase()
     );
     if (exists) {
       return { success: false, message: 'This username or email is already registered. Please sign in.' };
@@ -1205,7 +1205,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             firebaseUsers.forEach((user) => merged.set(user.id, { ...merged.get(user.id), ...user } as User));
             return Array.from(merged.values());
           });
-          const match = firebaseUsers.find((u) => u.name.toLowerCase() === clean || u.email.toLowerCase() === clean || u.uid === clean);
+          const match = firebaseUsers.find((u) => String(u.name || '').toLowerCase() === clean || String(u.email || '').toLowerCase() === clean || String(u.uid || '') === clean);
           if (match) {
             firebaseFound = match;
             setUsers((prev) => [match, ...prev.filter((u) => u.id !== match.id)]);
@@ -1230,9 +1230,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let found = firebaseFound || users.find(
       (u) =>
-        u.name.toLowerCase() === clean ||
-        u.email.toLowerCase() === clean ||
-        u.uid === clean
+        String(u.name || '').toLowerCase() === clean ||
+        String(u.email || '').toLowerCase() === clean ||
+        String(u.uid || '') === clean
     );
 
     // If still not found, try one direct cloud fetch
@@ -1242,9 +1242,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUsers(cloudUsers);
         found = cloudUsers.find(
           (u) =>
-            u.name.toLowerCase() === clean ||
-            u.email.toLowerCase() === clean ||
-            u.uid === clean
+            String(u.name || '').toLowerCase() === clean ||
+            String(u.email || '').toLowerCase() === clean ||
+            String(u.uid || '') === clean
         );
       }
     }

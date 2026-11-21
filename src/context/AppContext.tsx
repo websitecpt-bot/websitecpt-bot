@@ -34,7 +34,7 @@ import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollecti
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
-  // Supabase Cloud Sync
+  // Firebase Cloud Sync
   refreshAllFromFirebase: () => Promise<void>;
   isFirebaseSynced: boolean;
 
@@ -537,9 +537,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorageSet('language', language);
   }, [language]);
 
-  const [marketDataMode, setMarketDataMode] = useState<'live_stream' | 'manual_benchmark'>(() =>
+  const [marketDataMode, setMarketDataModeState] = useState<'live_stream' | 'manual_benchmark'>(() =>
     loadState('marketDataMode', 'live_stream')
   );
+  const setMarketDataMode = (mode: 'live_stream' | 'manual_benchmark') => {
+    setMarketDataModeState(mode);
+    if (isFirebaseConfigured()) {
+      void saveFirebaseDocument('marketSettings', 'global', { marketDataMode: mode })
+        .catch((error) => console.warn('[Firebase Market] Market mode sync failed:', error));
+    }
+  };
 
   useEffect(() => {
     safeStorageSet('marketDataMode', marketDataMode);
@@ -652,6 +659,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchFirebaseCollection<AuditLog>('auditLogs'),
       fetchFirebaseCollection<BalanceAdjustment>('balanceAdjustments'),
       fetchFirebaseCollection<SupportTicket>('supportTickets'),
+      fetchFirebaseCollection<MarketCoin>('marketCoins'),
+      fetchFirebaseCollection<{ marketDataMode?: 'live_stream' | 'manual_benchmark' }>('marketSettings'),
+      fetchFirebaseCollection<SystemSettings>('systemSettings'),
     ]);
 
     if (results[0].status === 'fulfilled') setUsers((prev) => mergeCloudItems(prev, results[0].value.map(normalizeFirebaseUser)));
@@ -673,12 +683,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
       ));
     }
+    if (results[7].status === 'fulfilled' && results[7].value.length > 0) {
+      setCoins((prev) => {
+        const map = new Map(prev.map((coin) => [coin.symbol, coin]));
+        results[7].value.forEach((coin) => map.set(coin.symbol, { ...map.get(coin.symbol), ...coin }));
+        return Array.from(map.values());
+      });
+    }
+    if (results[8].status === 'fulfilled' && results[8].value[0]?.marketDataMode) {
+      setMarketDataModeState(results[8].value[0].marketDataMode);
+    }
+    if (results[9].status === 'fulfilled' && results[9].value[0]) {
+      setSystemSettings((prev) => ({ ...prev, ...results[9].value[0] }));
+    }
 
     const coreDataLoaded = results[0].status === 'fulfilled' && results[1].status === 'fulfilled';
     setIsFirebaseSynced(coreDataLoaded);
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        console.error('[Firebase Cloud Sync] Collection load failed:', ['users', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'supportTickets'][index], result.reason);
+        console.error('[Firebase Cloud Sync] Collection load failed:', ['users', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'supportTickets', 'marketCoins', 'marketSettings', 'systemSettings'][index], result.reason);
       }
     });
   };
@@ -734,6 +757,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
         ));
       }, onError('supportTickets')),
+      subscribeFirebaseCollection<MarketCoin>('marketCoins', (items) => {
+        if (!isMounted || items.length === 0) return;
+        setCoins((prev) => {
+          const map = new Map(prev.map((coin) => [coin.symbol, coin]));
+          items.forEach((coin) => map.set(coin.symbol, { ...map.get(coin.symbol), ...coin }));
+          return Array.from(map.values());
+        });
+      }, onError('marketCoins')),
+      subscribeFirebaseCollection<{ marketDataMode?: 'live_stream' | 'manual_benchmark' }>('marketSettings', (items) => {
+        if (isMounted && items[0]?.marketDataMode) setMarketDataModeState(items[0].marketDataMode);
+      }, onError('marketSettings')),
+      subscribeFirebaseCollection<SystemSettings>('systemSettings', (items) => {
+        if (isMounted && items[0]) setSystemSettings((prev) => ({ ...prev, ...items[0] }));
+      }, onError('systemSettings')),
     ];
 
     void refreshAllFromFirebase();
@@ -1324,86 +1361,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCoinSettings = (symbol: string, updates: Partial<MarketCoin>) => {
-    setCoins((prev) =>
-      prev.map((coin) => {
-        if (coin.symbol === symbol) {
-          const updated = { ...coin, ...updates };
-          if (updates.priceOffset !== undefined || updates.price !== undefined) {
-            updated.price = Number((updated.basePrice + (updated.priceOffset || 0)).toFixed(updated.basePrice > 100 ? 2 : 4));
-          }
-          return updated;
-        }
-        return coin;
-      })
-    );
-    logAuditAction(
-      'MARKET_CONFIG_UPDATE',
-      symbol,
-      `Market coin parameters calibrated (Offset: ${updates.priceOffset ?? 0}, Spread: ${updates.spread ?? 'N/A'})`
-    );
+    const existing = coins.find((coin) => coin.symbol === symbol);
+    if (!existing) return;
+    const updated = { ...existing, ...updates };
+    if (updates.priceOffset !== undefined || updates.price !== undefined) {
+      updated.price = Number((updated.basePrice + (updated.priceOffset || 0)).toFixed(updated.basePrice > 100 ? 2 : 4));
+    }
+    setCoins((prev) => prev.map((coin) => coin.symbol === symbol ? updated : coin));
+    void saveFirebaseDocument('marketCoins', symbol, updated)
+      .catch((error) => console.warn('[Firebase Market] Coin settings sync failed:', error));
+    logAuditAction('MARKET_CONFIG_UPDATE', symbol, `Market coin parameters calibrated (Offset: ${updates.priceOffset ?? 0}, Spread: ${updates.spread ?? 'N/A'})`);
   };
 
   const setCoinPrice = (symbol: string, newPrice: number) => {
     if (newPrice <= 0) return;
-    setCoins((prev) =>
-      prev.map((c) => {
-        if (c.symbol === symbol) {
-          const formatted = Number(newPrice.toFixed(newPrice > 100 ? 2 : 4));
-          const change = ((formatted - c.basePrice) / c.basePrice) * 100;
-          return {
-            ...c,
-            price: formatted,
-            basePrice: formatted,
-            priceOffset: 0,
-            change24h: Number(change.toFixed(2)),
-            high24h: Math.max(c.high24h, formatted),
-            low24h: Math.min(c.low24h, formatted),
-          };
-        }
-        return c;
-      })
-    );
-    logAuditAction(
-      'BENCHMARK_PRICE_CALIBRATION',
-      symbol,
-      `Market benchmark price calibrated to $${newPrice.toLocaleString()}`
-    );
+    const existing = coins.find((coin) => coin.symbol === symbol);
+    if (!existing) return;
+    const formatted = Number(newPrice.toFixed(newPrice > 100 ? 2 : 4));
+    const change = ((formatted - existing.basePrice) / existing.basePrice) * 100;
+    const updated: MarketCoin = {
+      ...existing,
+      price: formatted,
+      basePrice: formatted,
+      priceOffset: 0,
+      change24h: Number(change.toFixed(2)),
+      high24h: Math.max(existing.high24h, formatted),
+      low24h: Math.min(existing.low24h, formatted),
+    };
+    setCoins((prev) => prev.map((coin) => coin.symbol === symbol ? updated : coin));
+    void saveFirebaseDocument('marketCoins', symbol, updated)
+      .catch((error) => console.warn('[Firebase Market] Benchmark price sync failed:', error));
+    logAuditAction('BENCHMARK_PRICE_CALIBRATION', symbol, `Market benchmark price calibrated to $${newPrice.toLocaleString()}`);
   };
 
   const applyMarketShock = (symbol: string, percentage: number) => {
-    setCoins((prev) =>
-      prev.map((c) => {
-        if (c.symbol === symbol) {
-          const multiplier = 1 + percentage / 100;
-          const newPrice = Number((c.price * multiplier).toFixed(c.price > 100 ? 2 : 4));
-          const newChange = Number((c.change24h + percentage).toFixed(2));
-          return {
-            ...c,
-            price: newPrice,
-            basePrice: newPrice,
-            priceOffset: 0,
-            change24h: newChange,
-            high24h: Math.max(c.high24h, newPrice),
-            low24h: Math.min(c.low24h, newPrice),
-          };
-        }
-        return c;
-      })
-    );
-    logAuditAction(
-      'MARKET_STRESS_TEST',
-      symbol,
-      `Simulated market shock applied: ${percentage >= 0 ? '+' : ''}${percentage}%`
-    );
+    const existing = coins.find((coin) => coin.symbol === symbol);
+    if (!existing) return;
+    const multiplier = 1 + percentage / 100;
+    const newPrice = Number((existing.price * multiplier).toFixed(existing.price > 100 ? 2 : 4));
+    const updated: MarketCoin = {
+      ...existing,
+      price: newPrice,
+      basePrice: newPrice,
+      priceOffset: 0,
+      change24h: Number((existing.change24h + percentage).toFixed(2)),
+      high24h: Math.max(existing.high24h, newPrice),
+      low24h: Math.min(existing.low24h, newPrice),
+    };
+    setCoins((prev) => prev.map((coin) => coin.symbol === symbol ? updated : coin));
+    void saveFirebaseDocument('marketCoins', symbol, updated)
+      .catch((error) => console.warn('[Firebase Market] Market shock sync failed:', error));
+    logAuditAction('MARKET_STRESS_TEST', symbol, `Simulated market shock applied: ${percentage >= 0 ? '+' : ''}${percentage}%`);
   };
 
   const addCustomCoin = (newCoin: MarketCoin) => {
-    setCoins((prev) => [...prev, newCoin]);
-    logAuditAction(
-      'CUSTOM_COIN_ADDED',
-      newCoin.symbol,
-      `New custom sandbox coin listed: ${newCoin.name} at initial price $${newCoin.price}`
-    );
+    setCoins((prev) => [...prev.filter((coin) => coin.symbol !== newCoin.symbol), newCoin]);
+    void saveFirebaseDocument('marketCoins', newCoin.symbol, newCoin)
+      .catch((error) => console.warn('[Firebase Market] New coin sync failed:', error));
+    logAuditAction('CUSTOM_COIN_ADDED', newCoin.symbol, `New custom sandbox coin listed: ${newCoin.name} at initial price $${newCoin.price}`);
   };
 
   const openTrade = async ({
@@ -2550,7 +2565,12 @@ if (!save.success) {
   };
 
   const updateSystemSettings = (newSettings: Partial<SystemSettings>) => {
-    setSystemSettings((prev) => ({ ...prev, ...newSettings }));
+    setSystemSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      void saveFirebaseDocument('systemSettings', 'global', updated)
+        .catch((error) => console.warn('[Firebase Settings] Platform settings sync failed:', error));
+      return updated;
+    });
     logAuditAction('SETTINGS_UPDATED', 'Platform Settings', 'System configuration updated.');
   };
 

@@ -50,6 +50,47 @@ export const saveFirebaseDocument = async <T extends object>(
   );
 };
 
+export const openFirebaseTrade = async (
+  trade: Record<string, any>,
+  totalDeduction: number
+): Promise<number> => {
+  const db = getDatabase();
+  const tradeId = String(trade?.id || '');
+  const userId = String(trade?.userId || '');
+  const deduction = Number(totalDeduction);
+  if (!tradeId || !userId) throw new Error('Trade or customer account ID is missing.');
+  if (!Number.isFinite(deduction) || deduction <= 0) throw new Error('Trade margin or fee is invalid.');
+
+  const tradeRef = doc(db, 'trades', tradeId);
+  const userRef = doc(db, 'users', userId);
+
+  return runTransaction(db, async (transaction) => {
+    const existingTrade = await transaction.get(tradeRef);
+    const userSnapshot = await transaction.get(userRef);
+
+    if (existingTrade.exists()) {
+      throw new Error('This trade ID already exists. Please retry with a new order.');
+    }
+    if (!userSnapshot.exists()) {
+      throw new Error('Your Firebase customer profile is missing. Please log out and sign in again; no balance was deducted.');
+    }
+
+    const user = userSnapshot.data();
+    if (user.status === 'suspended' || user.status === 'archived') {
+      throw new Error('This customer account is not permitted to open trades.');
+    }
+    const currentBalance = Number(user.tradingBalance ?? 0);
+    if (!Number.isFinite(currentBalance) || currentBalance < deduction) {
+      throw new Error('Insufficient trading balance in Firebase. Refresh your account balance and try again.');
+    }
+
+    const nextBalance = Number((currentBalance - deduction).toFixed(2));
+    transaction.set(tradeRef, removeUndefinedValues(trade));
+    transaction.update(userRef, { tradingBalance: nextBalance });
+    return nextBalance;
+  });
+};
+
 export const scheduleFirebaseTradeOutcome = async (
   tradeId: string,
   outcome: 'WIN' | 'LOSS' | null,

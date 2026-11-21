@@ -47,7 +47,9 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleLocation);
   }, [isUserLoggedIn, setActiveTab]);
 
-  const isMaintenanceActive = Boolean(systemSettings.maintenanceMode && !isAdmin);
+  // During the Firebase migration, keep all unauthenticated visitors on the maintenance screen.
+  // Admin access remains available so the owner can continue working and verify the upgrade.
+  const isMaintenanceActive = Boolean((systemSettings.maintenanceMode || !isUserLoggedIn) && !isAdmin);
   const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin' && activeTab !== 'agreement' && !isMaintenanceActive;
 
   return (

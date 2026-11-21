@@ -52,7 +52,7 @@ import {
   supabaseAuthSignIn,
 } from '../lib/supabase';
 import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
-import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection } from '../lib/firebaseData';
+import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
@@ -1097,37 +1097,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let authenticatedUserId = `user-${uid}`;
 
-    // If Supabase Cloud is configured, sync with Supabase Auth
-    if (isSupabaseConfigured()) {
-      try {
-        const { data: authData, error: authError } = await supabaseAuthSignUp({
-          email: cleanEmail,
-          password: password || '123456',
-          name: cleanName,
-          phone: phone || '',
-          uid,
-        });
-
-        if (authError) {
-          if (authError.message?.toLowerCase().includes('already registered')) {
-            return {
-              success: false,
-              message: 'This email is already registered. Please sign in with your password.',
-            };
-          }
-          console.error('[Supabase Auth SignUp failed]', authError.message);
-          return { success: false, message: `Account creation failed: ${authError.message}` };
-        }
-        if (authData?.user?.id) {
-          authenticatedUserId = authData.user.id;
-        } else {
-          return { success: false, message: 'Supabase did not confirm the new account. Please try again.' };
-        }
-      } catch (authErr) {
-        console.warn('[Supabase Auth SignUp notice]', authErr);
-      }
-    }
-
+    // Firebase is the primary authentication provider. Do not block registration on Supabase quota/service status.
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     const newUser: User = {
@@ -1169,17 +1139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // Save the customer profile first. Never create a local-only account in production.
-    if (isSupabaseConfigured()) {
-      const profileSave = await syncUserToSupabase(newUser);
-      if (!profileSave.success) {
-        console.error('[Supabase Profile Sync failed]', profileSave.error);
-        return {
-          success: false,
-          message: `Account authentication was created, but its customer profile could not be saved to the shared database. Do not register again; contact Admin. ${profileSave.error || ''}`.trim(),
-        };
-      }
-    }
+    // Firebase profile is the source of truth for newly registered accounts.
 
     // Update in-memory state
     setUsers((prev) => [newUser, ...prev.filter((u) => u.id !== newUser.id)]);
@@ -1235,6 +1195,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginUser = async (identifier: string, password?: string) => {
     const clean = identifier.trim().toLowerCase();
+
+    // Firebase user profiles keep login working even when Supabase is restricted.
+    if (isFirebaseConfigured()) {
+      try {
+        const firebaseUsers = await fetchFirebaseCollection<User>('users');
+        if (firebaseUsers.length > 0) {
+          setUsers((prev) => {
+            const merged = new Map(prev.map((user) => [user.id, user]));
+            firebaseUsers.forEach((user) => merged.set(user.id, { ...merged.get(user.id), ...user } as User));
+            return Array.from(merged.values());
+          });
+          const match = firebaseUsers.find((u) => u.name.toLowerCase() === clean || u.email.toLowerCase() === clean || u.uid === clean);
+          if (match) setUsers((prev) => [match, ...prev.filter((u) => u.id !== match.id)]);
+        }
+      } catch (err) {
+        console.warn('[Firebase users lookup]', err);
+      }
+    }
 
     // Refresh from Supabase if configured so latest registered users from all devices are loaded
     if (isSupabaseConfigured()) {

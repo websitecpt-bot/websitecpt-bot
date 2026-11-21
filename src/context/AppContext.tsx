@@ -909,8 +909,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               status: 'CLOSED' as const,
               closedAt: now.toISOString().replace('T', ' ').slice(0, 19),
             };
-            if (isSupabaseConfigured()) {
-              syncTradeToSupabase(closedTradeItem).catch((e) => console.warn('Trade auto-close sync notice:', e));
+            if (isFirebaseConfigured()) {
+              void saveFirebaseDocument('trades', closedTradeItem.id, closedTradeItem)
+                .catch((e) => console.warn('[Firebase Trade] Auto-close sync notice:', e));
             }
             return closedTradeItem;
           }
@@ -920,16 +921,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Persist the live market snapshot every 10 seconds. Realtime sends the
           // changed trade row to other devices without reloading the full trade table.
           const lastSyncedAt = lastTradeCloudSyncRef.current[t.id] || 0;
-          if (isSupabaseConfigured() && nowMs - lastSyncedAt >= 10000) {
+          if (isFirebaseConfigured() && nowMs - lastSyncedAt >= 10000) {
             lastTradeCloudSyncRef.current[t.id] = nowMs;
-            syncTradeToSupabase({
+            void saveFirebaseDocument('trades', t.id, {
               ...t,
               currentPrice: curPrice,
               pnl: livePnl,
               pnlPercent: livePnlPercent,
-            }).then((result) => {
-              if (!result.success) console.warn('[Trade live sync] Snapshot not saved:', result.error, t.id);
-            }).catch((error) => console.warn('[Trade live sync] Snapshot error:', error, t.id));
+            }).catch((error) => console.warn('[Firebase Trade] Live snapshot not saved:', error, t.id));
           }
 
           return {
@@ -949,10 +948,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   const totalReturn = userPayouts.reduce((sum, p) => sum + p.returnAmount, 0);
                   const updatedTradingBalance = Number((u.tradingBalance + totalReturn).toFixed(2));
 
-                  // Persist expiry settlement to Supabase as well as local state.
                   // Margin was deducted when the trade opened; return margin + PnL here.
-                  if (isSupabaseConfigured()) {
-                    updateUserBalanceInSupabase(u.id, updatedTradingBalance, u.fundingBalance);
+                  if (isFirebaseConfigured()) {
+                    void saveFirebaseDocument('users', u.id, { tradingBalance: updatedTradingBalance })
+                      .catch((error) => console.warn('[Firebase Balance] Trade expiry balance sync failed:', error));
                   }
 
                   return {
@@ -1170,38 +1169,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Refresh from Supabase if configured so latest registered users from all devices are loaded
-    if (isSupabaseConfigured()) {
-      try {
-        const cloudUsers = await fetchUsersFromSupabase();
-        if (cloudUsers && cloudUsers.length > 0) {
-          setUsers(cloudUsers);
-        }
-      } catch (err) {
-        console.warn('Fetch users for login error:', err);
-      }
-    }
-
     let found = firebaseFound || users.find(
       (u) =>
         String(u.name || '').toLowerCase() === clean ||
         String(u.email || '').toLowerCase() === clean ||
         String(u.uid || '') === clean
     );
-
-    // If still not found, try one direct cloud fetch
-    if (!found && isSupabaseConfigured()) {
-      const cloudUsers = await fetchUsersFromSupabase();
-      if (cloudUsers) {
-        setUsers(cloudUsers);
-        found = cloudUsers.find(
-          (u) =>
-            String(u.name || '').toLowerCase() === clean ||
-            String(u.email || '').toLowerCase() === clean ||
-            String(u.uid || '') === clean
-        );
-      }
-    }
 
     if (!found) {
       return {
@@ -1284,7 +1257,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = prev.map((u) => (u.id === currentUserId ? { ...u, avatar: avatarUrl } : u));
       const target = updated.find((u) => u.id === currentUserId);
       if (target) {
-        syncUserToSupabase(target);
+        const { password: _password, ...safeProfile } = target;
+        void saveFirebaseDocument('users', target.id, safeProfile)
+          .catch((error) => console.warn('[Firebase User] Avatar sync failed:', error));
       }
       return updated;
     });
@@ -1294,46 +1269,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!newPass || newPass.trim().length < 6) {
       return { success: false, message: 'New password must be at least 6 characters long.' };
     }
-
-    const actualCurrentPass = currentUser.password || '123456';
-    if (currentPass.trim() !== actualCurrentPass) {
-      return { success: false, message: 'Current password is incorrect. Please re-enter your current password.' };
-    }
-
-    const updatedUser: User = {
-      ...currentUser,
-      password: newPass.trim(),
-    };
-
-    setUsers((prev) => {
-      const updatedList = prev.map((u) => (u.id === currentUser.id ? updatedUser : u));
-      saveState('users', updatedList);
-      return updatedList;
-    });
-
     try {
-      await syncUserToSupabase(updatedUser);
-      if (isSupabaseConfigured() && currentUser.email) {
-        const { getSupabaseClient } = await import('../lib/supabase');
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          await supabase.auth.updateUser({ password: newPass.trim() });
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase password sync notice:', err);
+      await updateFirebasePassword(currentPass.trim(), newPass.trim());
+      logAuditAction(
+        'USER_PASSWORD_CHANGED',
+        `${currentUser.name} (${currentUser.uid})`,
+        'Account login password updated successfully through Firebase Authentication.'
+      );
+      return { success: true, message: 'Password updated successfully! Please use your new password for all future logins.' };
+    } catch (error) {
+      console.warn('[Firebase Auth] Password update failed:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Password could not be updated. Please sign in again and retry.',
+      };
     }
-
-    logAuditAction(
-      'USER_PASSWORD_CHANGED',
-      `${currentUser.name} (${currentUser.uid})`,
-      'Account login password updated successfully by user.'
-    );
-
-    return {
-      success: true,
-      message: 'Password updated successfully! Please use your new password for all future logins.',
-    };
   };
 
   const updateUserStatus = (userId: string, status: 'active' | 'suspended' | 'archived', reason?: string) => {
@@ -1345,7 +1295,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, status } : user));
-    void updateUserStatusInSupabase(userId, status);
+    void saveFirebaseDocument('users', userId, { status })
+      .catch((error) => console.warn('[Firebase User] Status sync failed:', error));
     const action = status === 'archived'
       ? 'USER_ARCHIVED'
       : status === 'suspended'
@@ -1577,10 +1528,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((t) => (t.id === tradeId ? closedTrade : t))
     );
 
-    if (isSupabaseConfigured()) {
-      syncTradeToSupabase(closedTrade).catch((err) => console.warn('Trade close sync notice:', err));
-      updateUserBalanceInSupabase(trade.userId, updatedBal, tradeOwner.fundingBalance);
-    }
+    void Promise.all([
+      saveFirebaseDocument('trades', closedTrade.id, closedTrade),
+      saveFirebaseDocument('users', trade.userId, { tradingBalance: updatedBal }),
+    ]).catch((error) => console.warn('[Firebase Trade] Close/settlement sync failed:', error));
   };
 
   const setTradeOutcome = (tradeId: string, outcome: 'WIN' | 'LOSS' | null, percent: number = 35) => {
@@ -1596,12 +1547,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     const target = trades.find((t) => t.id === tradeId);
-    if (target && isSupabaseConfigured()) {
-      syncTradeToSupabase({
+    if (target) {
+      void saveFirebaseDocument('trades', target.id, {
         ...target,
         scheduledOutcome: outcome,
         scheduledPercent: percent,
-      }).catch((e) => console.warn('Schedule outcome sync notice:', e));
+      }).catch((error) => console.warn('[Firebase Trade] Outcome schedule sync failed:', error));
     }
   };
 
@@ -1634,19 +1585,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const finalReturn = Math.max(0, Number((trade.margin + finalPnl).toFixed(2)));
 
-    // Credit target user's tradingBalance
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === trade.userId) {
-          const newTradingBal = Number((u.tradingBalance + finalReturn).toFixed(2));
-          if (isSupabaseConfigured()) {
-            updateUserBalanceInSupabase(u.id, newTradingBal, u.fundingBalance);
-          }
-          return { ...u, tradingBalance: newTradingBal };
-        }
-        return u;
-      })
-    );
+    // Credit the actual owner of this trade and persist the balance in Firebase.
+    const tradeOwner = users.find((user) => user.id === trade.userId);
+    if (!tradeOwner) {
+      console.error('[Trade settlement] Owner not found; refusing to credit the wrong account.', trade.userId);
+      return;
+    }
+    const newTradingBal = Number(((tradeOwner.tradingBalance || 0) + finalReturn).toFixed(2));
+    setUsers((prev) => prev.map((user) =>
+      user.id === trade.userId ? { ...user, tradingBalance: newTradingBal } : user
+    ));
+    void saveFirebaseDocument('users', trade.userId, { tradingBalance: newTradingBal })
+      .catch((error) => console.warn('[Firebase Balance] Admin settlement sync failed:', error));
 
     const closedTrade: Trade = {
       ...trade,
@@ -1662,9 +1612,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTrades((prev) => prev.map((t) => (t.id === tradeId ? closedTrade : t)));
 
-    if (isSupabaseConfigured()) {
-      syncTradeToSupabase(closedTrade).catch((err) => console.warn('Admin settle sync error:', err));
-    }
+    void saveFirebaseDocument('trades', closedTrade.id, closedTrade)
+      .catch((error) => console.warn('[Firebase Trade] Admin settlement sync failed:', error));
 
     logAuditAction(
       'ADMIN_SETTLE_TRADE',

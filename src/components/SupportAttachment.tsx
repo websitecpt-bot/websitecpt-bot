@@ -26,7 +26,7 @@ export const SupportAttachment: React.FC<SupportAttachmentProps> = ({
     setError('');
 
     // Current messages store a data URL or a direct Firebase download URL.
-    // Legacy storage:// references belonged to the old Supabase bucket and are not queried.
+    // Legacy storage:// references belong to a retired storage provider and are not queried.
     if (reference.startsWith('storage://')) {
       setError('This is an older attachment from the previous storage service.');
       setLoading(false);

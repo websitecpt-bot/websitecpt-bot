@@ -1,8 +1,11 @@
-﻿import {
+import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
 
@@ -68,4 +71,18 @@ export const loginOrMigrateWithFirebase = async (
       throw createError;
     }
   }
+};
+
+
+export const updateFirebasePassword = async (
+  currentPassword: string,
+  newPassword: string
+) => {
+  const user = getFirebaseAuth().currentUser;
+  if (!user?.email) {
+    throw new Error('Please sign in again before changing your password.');
+  }
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, newPassword);
 };

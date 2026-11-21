@@ -540,7 +540,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorageSet('marketDataMode', marketDataMode);
   }, [marketDataMode]);
 
-  const currentUser = users.find((u) => u.id === currentUserId) || users[0];
+  // Keep the app available if this browser has a stale empty customer cache.
+  const currentUser = users.find((u) => u.id === currentUserId) || users[0] || initialUsers.find((u) => u.role === 'superadmin') || initialUsers[0];
   const isSuperAdmin =
     currentUser.role === 'superadmin' ||
     currentUser.email === 'ripuworkshop@gmail.com' ||

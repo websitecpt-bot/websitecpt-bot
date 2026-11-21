@@ -127,7 +127,7 @@ export const SupportModal: React.FC = () => {
         });
       } else {
         // Store the file data in the support message so it can be viewed/downloaded
-        // by both sides without requiring a Supabase Storage auth session.
+        // by both customer and admin from the shared Firebase support inbox.
         const reader = new FileReader();
         reader.onload = () => {
           setSelectedAttachment({

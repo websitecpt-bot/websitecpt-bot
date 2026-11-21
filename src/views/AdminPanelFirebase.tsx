@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { isFirebaseConfigured } from '../lib/firebase';
 import { AdminLiveTradingTab } from './admin/AdminLiveTradingTab';
+import { initialUsers } from '../data/initialData';
 
 const readAdminSession = (): boolean => {
   try {
@@ -118,12 +119,18 @@ export const AdminPanelFirebase: React.FC = () => {
     const cleanUser = adminUsername.trim().toLowerCase();
     const cleanPass = adminPassword.trim();
 
-    // Only the known Super Administrator profile may enter the Admin portal.
-    // Firebase Authentication verifies the password and migrates a verified legacy
-    // admin profile on first login when its previous local password is available.
-    const superAdminAccount = users.find((user) =>
-      user.role === 'superadmin' || String(user.uid ?? '') === '100001'
-    );
+    // A browser cache or a partial Firebase profile may omit the Super Admin row.
+    // Use the original, fixed Super Admin identity as a lookup fallback only; the
+    // password is still verified by Firebase Authentication in loginUser().
+    const seededSuperAdmin = initialUsers.find((user) => user.role === 'superadmin');
+    const superAdminAccount =
+      users.find((user) => user.role === 'superadmin') ||
+      users.find((user) => seededSuperAdmin && (
+        user.id === seededSuperAdmin.id ||
+        String(user.email || '').trim().toLowerCase() === seededSuperAdmin.email.toLowerCase()
+      )) ||
+      seededSuperAdmin;
+
     const acceptedUsernames = [
       String(superAdminAccount?.name ?? ''),
       String(superAdminAccount?.email ?? ''),
@@ -134,7 +141,7 @@ export const AdminPanelFirebase: React.FC = () => {
     ].map((value) => value.trim().toLowerCase()).filter(Boolean);
 
     if (!superAdminAccount?.email || !acceptedUsernames.includes(cleanUser)) {
-      setAuthError('Authorized administrator account not found. Access denied.');
+      setAuthError('Administrator profile is not available. Please reload and try again.');
       return;
     }
 

@@ -1503,6 +1503,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await saveFirebaseDocument('users', found.id, profileToSave);
       } catch (firebaseError) {
         console.error('[Firebase Login/Migration failed]', firebaseError);
+        const authCode = String((firebaseError as { code?: string })?.code || '');
+        if (found.role === 'superadmin') {
+          const detail = authCode === 'auth/user-not-found'
+            ? 'The administrator email is not registered in Firebase Authentication yet.'
+            : authCode === 'auth/invalid-credential' || authCode === 'auth/wrong-password'
+              ? 'Firebase Authentication did not accept this administrator password.'
+              : 'Firebase Authentication could not verify the administrator sign-in.';
+          return {
+            success: false,
+            message: `${detail} The Admin profile was found and no customer data was changed. Verify the Admin email and password under Firebase Authentication.`,
+          };
+        }
         return {
           success: false,
           message: 'Login or account migration failed. Your existing account has not been deleted. Please contact Support.',

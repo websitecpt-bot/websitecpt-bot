@@ -29,34 +29,14 @@ import {
   initialSystemSettings,
   OFFICIAL_REFERRAL_CODES,
 } from '../data/initialData';
-import {
-  isSupabaseConfigured,
-  getSupabaseConfigStatus,
-  fetchUsersFromSupabase,
-  fetchTradesFromSupabase,
-  fetchTradeFromSupabase,
-  fetchDepositsFromSupabase,
-  fetchWithdrawalsFromSupabase,
-  fetchAuditLogsFromSupabase,
-  syncUserToSupabase,
-  updateUserBalanceInSupabase,
-  updateUserStatusInSupabase,
-  syncTradeToSupabase,
-  syncDepositToSupabase,
-  updateDepositStatusInSupabase,
-  syncWithdrawalToSupabase,
-  updateWithdrawalStatusInSupabase,
-  syncAuditLogToSupabase,
-  subscribeToSupabaseRealtime,
-} from '../lib/supabase';
-import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
+import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword } from '../lib/firebaseAuth';
 import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
   // Supabase Cloud Sync
-  refreshAllFromSupabase: () => Promise<void>;
-  isSupabaseSynced: boolean;
+  refreshAllFromFirebase: () => Promise<void>;
+  isFirebaseSynced: boolean;
 
   // Current user & Auth
   users: User[];
@@ -572,7 +552,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUser.uid === '100001';
   const activeCoin = coins.find((c) => c.symbol === selectedSymbol) || coins[0];
 
-  const [isSupabaseSynced, setIsSupabaseSynced] = useState<boolean>(() => isSupabaseConfigured());
+  const [isFirebaseSynced, setIsFirebaseSynced] = useState<boolean>(() => isFirebaseConfigured());
 
   // Non-destructive WhatsApp-style ticket merge: ensures zero message drops & keeps latest order
   const mergeIncomingTickets = (prev: SupportTicket[], incoming: SupportTicket[]): SupportTicket[] => {
@@ -621,173 +601,131 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Central Supabase Cloud Sync & Realtime Listener
-  const hydrateFromSupabase = async () => {
-    if (!isSupabaseConfigured()) return;
-    try {
-      // Fetch each data group independently. A timeout in the large support-chat
-      // table must never prevent accounts, balances, trades or requests from loading.
-      const results = await Promise.allSettled([
-        fetchUsersFromSupabase(),
-        fetchTradesFromSupabase(),
-        fetchDepositsFromSupabase(),
-        fetchWithdrawalsFromSupabase(),
-        fetchAuditLogsFromSupabase(),
-      ]);
-      const cloudUsers = results[0].status === 'fulfilled' ? results[0].value : null;
-      const cloudTrades = results[1].status === 'fulfilled' ? results[1].value : null;
-      const cloudDeposits = results[2].status === 'fulfilled' ? results[2].value : null;
-      const cloudWithdrawals = results[3].status === 'fulfilled' ? results[3].value : null;
-      const cloudAudit = results[4].status === 'fulfilled' ? results[4].value : null;
-
-      if (cloudUsers && cloudUsers.length > 0) {
-        setUsers((prev) => {
-          const cloudMap = new Map(cloudUsers.map((u) => [u.id, u]));
-          // Keep existing if not in cloud, but cloud takes precedence for balances/status
-          const merged = [...cloudUsers];
-          prev.forEach((u) => {
-            if (!cloudMap.has(u.id)) {
-              merged.push(u);
-            }
-          });
-          return merged;
-        });
-      }
-      if (cloudTrades) {
-        setTrades((prev) => {
-          const cloudMap = new Map(cloudTrades.map((t) => [t.id, t]));
-          const merged = [...cloudTrades];
-          // Preserve local trades until their cloud write is confirmed, including completed history.
-          prev.forEach((localTrade) => {
-            if (!cloudMap.has(localTrade.id)) merged.push(localTrade);
-          });
-          return merged.sort(
-            (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
-          );
-        });
-      }
-      if (cloudDeposits && cloudDeposits.length > 0) {
-        setDepositRequests(cloudDeposits);
-      }
-      if (cloudWithdrawals && cloudWithdrawals.length > 0) {
-        setWithdrawalRequests(cloudWithdrawals);
-      }
-      if (cloudAudit) {
-        setAuditLogs((prev) => {
-          const merged = new Map(cloudAudit.map((log) => [log.id, log]));
-          prev.forEach((log) => {
-            if (!merged.has(log.id)) merged.set(log.id, log);
-          });
-          return Array.from(merged.values()).sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          );
-        });
-      }
-      const coreDataLoaded =
-        results[0].status === 'fulfilled' && cloudUsers !== null &&
-        results[1].status === 'fulfilled' && cloudTrades !== null;
-      setIsSupabaseSynced(coreDataLoaded);
-      if (!coreDataLoaded) {
-        console.warn('[Supabase Cloud Hydration] Account or trade data could not be confirmed from the shared database.');
-      }
-    } catch (err) {
-      setIsSupabaseSynced(false);
-      console.warn('[Supabase Cloud Hydration] notice:', err);
-    }
+  // Firebase is the single cloud source for account, trade, support and request data.
+  const mergeCloudItems = <T extends { id: string }>(previous: T[], incoming: T[]): T[] => {
+    const merged = new Map(previous.map((item) => [item.id, item]));
+    incoming.forEach((item) => {
+      merged.set(item.id, { ...merged.get(item.id), ...item } as T);
+    });
+    return Array.from(merged.values());
   };
 
-  const refreshAllFromSupabase = async () => {
-    // Manual Admin Sync Now must also refresh the Support Inbox, not just core tables.
-    await hydrateFromSupabase();
+  const normalizeSupportTicket = (value: any): SupportTicket => ({
+    ...value,
+    id: String(value?.id || ''),
+    userId: String(value?.userId || ''),
+    userName: String(value?.userName || 'Unknown Customer'),
+    userEmail: String(value?.userEmail || ''),
+    status: value?.status === 'closed' || value?.status === 'answered' ? value.status : 'pending',
+    lastMessage: String(value?.lastMessage || ''),
+    lastMessageTime: String(value?.lastMessageTime || new Date().toISOString()),
+    unreadAdminCount: Number(value?.unreadAdminCount || 0),
+    unreadUserCount: Number(value?.unreadUserCount || 0),
+    messages: Array.isArray(value?.messages) ? value.messages : [],
+  });
+
+  const refreshAllFromFirebase = async () => {
+    if (!isFirebaseConfigured()) {
+      setIsFirebaseSynced(false);
+      return;
+    }
+    const results = await Promise.allSettled([
+      fetchFirebaseCollection<User>('users'),
+      fetchFirebaseCollection<Trade>('trades'),
+      fetchFirebaseCollection<DepositRequest>('deposits'),
+      fetchFirebaseCollection<WithdrawalRequest>('withdrawals'),
+      fetchFirebaseCollection<AuditLog>('auditLogs'),
+      fetchFirebaseCollection<BalanceAdjustment>('balanceAdjustments'),
+      fetchFirebaseCollection<SupportTicket>('supportTickets'),
+    ]);
+
+    if (results[0].status === 'fulfilled') setUsers((prev) => mergeCloudItems(prev, results[0].value));
+    if (results[1].status === 'fulfilled') setTrades((prev) => mergeCloudItems(prev, results[1].value));
+    if (results[2].status === 'fulfilled') setDepositRequests((prev) => mergeCloudItems(prev, results[2].value));
+    if (results[3].status === 'fulfilled') setWithdrawalRequests((prev) => mergeCloudItems(prev, results[3].value));
+    if (results[4].status === 'fulfilled') {
+      setAuditLogs((prev) => mergeCloudItems(prev, results[4].value).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ));
+    }
+    if (results[5].status === 'fulfilled') {
+      setBalanceAdjustments((prev) => mergeCloudItems(prev, results[5].value).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ));
+    }
+    if (results[6].status === 'fulfilled') {
+      setSupportTickets(results[6].value.map(normalizeSupportTicket).sort(
+        (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+      ));
+    }
+
+    const coreDataLoaded = results[0].status === 'fulfilled' && results[1].status === 'fulfilled';
+    setIsFirebaseSynced(coreDataLoaded);
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error('[Firebase Cloud Sync] Collection load failed:', ['users', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'supportTickets'][index], result.reason);
+      }
+    });
   };
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isFirebaseConfigured()) {
+      setIsFirebaseSynced(false);
+      return;
+    }
 
     let isMounted = true;
-    hydrateFromSupabase();
+    let usersReady = false;
+    let tradesReady = false;
+    const onError = (collectionName: string) => (error: Error) => {
+      console.error(`[Firebase ${collectionName}] Realtime listener failed:`, error);
+      if (collectionName === 'users' || collectionName === 'trades') setIsFirebaseSynced(false);
+    };
 
-    // Subscribe to Postgres Realtime changes
-    const channel = subscribeToSupabaseRealtime({
-      onUserUpdate: async () => {
-        const u = await fetchUsersFromSupabase();
-        if (u && isMounted) setUsers(u);
-      },
-      onTradeUpdate: async (payload) => {
-        // A live P/L update affects one trade. Fetch only that row instead of
-        // re-downloading the customer's complete trade history on every event.
-        const tradeId = payload?.new?.id || payload?.old?.id;
-        if (!tradeId || !isMounted) return;
-        if (payload?.eventType === 'DELETE') {
-          setTrades((prev) => prev.filter((trade) => trade.id !== tradeId));
-          return;
-        }
-        const cloudTrade = await fetchTradeFromSupabase(tradeId);
-        if (!cloudTrade || !isMounted) return;
-        setTrades((prev) => {
-          const exists = prev.some((trade) => trade.id === cloudTrade.id);
-          const merged = exists
-            ? prev.map((trade) => trade.id === cloudTrade.id ? cloudTrade : trade)
-            : [cloudTrade, ...prev];
-          return merged.sort(
-            (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
-          );
-        });
-      },
-      onDepositUpdate: async () => {
-        const d = await fetchDepositsFromSupabase();
-        if (d && isMounted) setDepositRequests(d);
-      },
-      onWithdrawalUpdate: async () => {
-        const w = await fetchWithdrawalsFromSupabase();
-        if (w && isMounted) setWithdrawalRequests(w);
-      },
-      onAuditLogUpdate: async () => {
-        const cloudLogs = await fetchAuditLogsFromSupabase();
-        if (cloudLogs && isMounted) {
-          setAuditLogs((prev) => {
-            const merged = new Map(cloudLogs.map((log) => [log.id, log]));
-            prev.forEach((log) => {
-              if (!merged.has(log.id)) merged.set(log.id, log);
-            });
-            return Array.from(merged.values()).sort(
-              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-          });
-        }
-      },
-    });
+    const unsubscribers = [
+      subscribeFirebaseCollection<User>('users', (items) => {
+        if (!isMounted) return;
+        usersReady = true;
+        setUsers((prev) => mergeCloudItems(prev, items));
+        setIsFirebaseSynced(usersReady && tradesReady);
+      }, onError('users')),
+      subscribeFirebaseCollection<Trade>('trades', (items) => {
+        if (!isMounted) return;
+        tradesReady = true;
+        setTrades((prev) => mergeCloudItems(prev, items).sort(
+          (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+        ));
+        setIsFirebaseSynced(usersReady && tradesReady);
+      }, onError('trades')),
+      subscribeFirebaseCollection<DepositRequest>('deposits', (items) => {
+        if (isMounted) setDepositRequests((prev) => mergeCloudItems(prev, items));
+      }, onError('deposits')),
+      subscribeFirebaseCollection<WithdrawalRequest>('withdrawals', (items) => {
+        if (isMounted) setWithdrawalRequests((prev) => mergeCloudItems(prev, items));
+      }, onError('withdrawals')),
+      subscribeFirebaseCollection<AuditLog>('auditLogs', (items) => {
+        if (isMounted) setAuditLogs((prev) => mergeCloudItems(prev, items).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        ));
+      }, onError('auditLogs')),
+      subscribeFirebaseCollection<BalanceAdjustment>('balanceAdjustments', (items) => {
+        if (isMounted) setBalanceAdjustments((prev) => mergeCloudItems(prev, items).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        ));
+      }, onError('balanceAdjustments')),
+      subscribeFirebaseCollection<SupportTicket>('supportTickets', (items) => {
+        if (!isMounted) return;
+        setSupportTickets(items.map(normalizeSupportTicket).sort(
+          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+        ));
+      }, onError('supportTickets')),
+    ];
 
-    // Realtime handles changes immediately. Poll less often as a fallback to
-    // avoid repeatedly transferring the same account and full support history.
-    const pollTimer = setInterval(() => {
-      if (isMounted) hydrateFromSupabase(false);
-    }, 60000);
-
+    void refreshAllFromFirebase();
     return () => {
       isMounted = false;
-      clearInterval(pollTimer);
-
-      if (channel) {
-        channel.unsubscribe();
-      }
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
-  }, []);
-
-  // Firebase Realtime listener: both customer and admin clients receive the same inbox updates.
-  useEffect(() => {
-    if (!isFirebaseConfigured()) return;
-    const unsubscribe = subscribeFirebaseCollection<SupportTicket>(
-      'supportTickets',
-      (tickets) => {
-        const sorted = tickets.sort(
-          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-        );
-        setSupportTickets(sorted);
-      },
-      (error) => console.error('[Firebase Support] Realtime listener failed:', error)
-    );
-    return () => unsubscribe();
   }, []);
 
   // Live Binance Price Feed (Zero-lag accurate real-world rates for major crypto coins)
@@ -2620,8 +2558,8 @@ if (!save.success) {
   return (
     <AppContext.Provider
       value={{
-        refreshAllFromSupabase,
-        isSupabaseSynced,
+        refreshAllFromFirebase,
+        isFirebaseSynced,
         users,
         currentUser,
         switchUser,

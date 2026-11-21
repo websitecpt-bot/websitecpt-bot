@@ -680,40 +680,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchFirebaseCollection<SystemSettings>('systemSettings'),
     ]);
 
-    if (results[0].status === 'fulfilled') setUsers((prev) => mergeCloudItems(prev, results[0].value.map(normalizeFirebaseUser)));
-    if (results[1].status === 'fulfilled') setTrades((prev) => mergeCloudItems(prev, results[1].value));
-    if (results[2].status === 'fulfilled') setDepositRequests((prev) => mergeCloudItems(prev, results[2].value));
-    if (results[3].status === 'fulfilled') setWithdrawalRequests((prev) => mergeCloudItems(prev, results[3].value));
-    if (results[4].status === 'fulfilled') {
-      setAuditLogs((prev) => mergeCloudItems(prev, results[4].value).sort(
+    const [
+      usersResult,
+      tradesResult,
+      depositsResult,
+      withdrawalsResult,
+      auditLogsResult,
+      adjustmentsResult,
+      supportResult,
+      coinsResult,
+      marketSettingsResult,
+      systemSettingsResult,
+    ] = results;
+
+    if (usersResult.status === 'fulfilled') {
+      setUsers((prev) => mergeCloudItems(prev, usersResult.value.map(normalizeFirebaseUser)));
+    }
+    if (tradesResult.status === 'fulfilled') {
+      setTrades((prev) => mergeCloudItems(prev, tradesResult.value));
+    }
+    if (depositsResult.status === 'fulfilled') {
+      setDepositRequests((prev) => mergeCloudItems(prev, depositsResult.value));
+    }
+    if (withdrawalsResult.status === 'fulfilled') {
+      setWithdrawalRequests((prev) => mergeCloudItems(prev, withdrawalsResult.value));
+    }
+    if (auditLogsResult.status === 'fulfilled') {
+      setAuditLogs((prev) => mergeCloudItems(prev, auditLogsResult.value).sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       ));
     }
-    if (results[5].status === 'fulfilled') {
-      setBalanceAdjustments((prev) => mergeCloudItems(prev, results[5].value).sort(
+    if (adjustmentsResult.status === 'fulfilled') {
+      setBalanceAdjustments((prev) => mergeCloudItems(prev, adjustmentsResult.value).sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       ));
     }
-    if (results[6].status === 'fulfilled') {
-      setSupportTickets(results[6].value.map(normalizeSupportTicket).sort(
+    if (supportResult.status === 'fulfilled') {
+      setSupportTickets(supportResult.value.map(normalizeSupportTicket).sort(
         (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
       ));
     }
-    if (results[7].status === 'fulfilled' && results[7].value.length > 0) {
+    if (coinsResult.status === 'fulfilled' && coinsResult.value.length > 0) {
       setCoins((prev) => {
         const map = new Map(prev.map((coin) => [coin.symbol, coin]));
-        results[7].value.forEach((coin) => map.set(coin.symbol, { ...map.get(coin.symbol), ...coin }));
+        coinsResult.value.forEach((coin) => map.set(coin.symbol, { ...map.get(coin.symbol), ...coin }));
         return Array.from(map.values());
       });
     }
-    if (results[8].status === 'fulfilled' && results[8].value[0]?.marketDataMode) {
-      setMarketDataModeState(results[8].value[0].marketDataMode);
+    if (marketSettingsResult.status === 'fulfilled' && marketSettingsResult.value[0]?.marketDataMode) {
+      setMarketDataModeState(marketSettingsResult.value[0].marketDataMode);
     }
-    if (results[9].status === 'fulfilled' && results[9].value[0]) {
-      setSystemSettings((prev) => ({ ...prev, ...results[9].value[0] }));
+    if (systemSettingsResult.status === 'fulfilled' && systemSettingsResult.value[0]) {
+      setSystemSettings((prev) => ({ ...prev, ...systemSettingsResult.value[0] }));
     }
 
-    const coreDataLoaded = results[0].status === 'fulfilled' && results[1].status === 'fulfilled';
+    const coreDataLoaded = usersResult.status === 'fulfilled' && tradesResult.status === 'fulfilled';
     setIsFirebaseSynced(coreDataLoaded);
     results.forEach((result, index) => {
       if (result.status === 'rejected') {

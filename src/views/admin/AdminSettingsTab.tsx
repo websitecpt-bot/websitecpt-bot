@@ -249,7 +249,7 @@ export const AdminSettingsTab: React.FC = () => {
         <div className="rounded-xl border border-[#253149] bg-[#0d1421] p-3 space-y-2">
           <div className="text-slate-400">Cloud collections used by this app</div>
           <div className="flex flex-wrap gap-2">
-            {['users', 'supportTickets', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments'].map((name) => (
+            {['users', 'supportTickets', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'marketCoins', 'marketSettings', 'systemSettings'].map((name) => (
               <span key={name} className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 font-mono text-[10px] text-cyan-200">{name}</span>
             ))}
           </div>

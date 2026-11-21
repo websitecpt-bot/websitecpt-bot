@@ -32,6 +32,7 @@ export const AdminLiveTradingTab: React.FC = () => {
   } | null>(null);
   const [customPercentInput, setCustomPercentInput] = useState<number>(35);
   const [settleImmediately, setSettleImmediately] = useState<boolean>(false);
+  const [isApplyingOutcome, setIsApplyingOutcome] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // Filter only active running trades
@@ -64,22 +65,31 @@ export const AdminLiveTradingTab: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleApplyCustomOutcome = () => {
-    if (!customPercentModal) return;
+  const handleApplyCustomOutcome = async () => {
+    if (!customPercentModal || isApplyingOutcome) return;
     const { tradeId, mode } = customPercentModal;
-    const pct = Number(customPercentInput) || 35;
-
-    if (settleImmediately) {
-      adminSettleTrade(tradeId, mode, pct);
-      setActionNotice(`Trade #${tradeId} immediately settled as ${mode} (${pct}%)!`);
-    } else {
-      setTradeOutcome(tradeId, mode, pct);
-      setActionNotice(`Scheduled ${mode} (+${pct}%) on Trade #${tradeId} when duration ends.`);
+    const pct = Number(customPercentInput);
+    if (!Number.isFinite(pct) || pct < 1 || pct > 5000) {
+      setActionNotice('Enter a valid percentage between 1% and 5000%.');
+      return;
     }
 
-    setCustomPercentModal(null);
-    setSettleImmediately(false);
-    setTimeout(() => setActionNotice(null), 4000);
+    setIsApplyingOutcome(true);
+    try {
+      const result = settleImmediately
+        ? await adminSettleTrade(tradeId, mode, pct)
+        : await setTradeOutcome(tradeId, mode, pct);
+      setActionNotice(result.message);
+      if (result.success) {
+        setCustomPercentModal(null);
+        setSettleImmediately(false);
+      }
+    } catch (error) {
+      setActionNotice(error instanceof Error ? error.message : 'The trade action could not be confirmed.');
+    } finally {
+      setIsApplyingOutcome(false);
+      setTimeout(() => setActionNotice(null), 5000);
+    }
   };
 
   return (
@@ -297,10 +307,10 @@ export const AdminLiveTradingTab: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Win 35% Quick Button */}
                           <button
-                            onClick={() => {
-                              setTradeOutcome(trade.id, 'WIN', 35);
-                              setActionNotice(`Scheduled 35% Win for ${trade.userName} on #${trade.id}`);
-                              setTimeout(() => setActionNotice(null), 3000);
+                            onClick={async () => {
+                              const result = await setTradeOutcome(trade.id, 'WIN', 35);
+                              setActionNotice(result.message);
+                              setTimeout(() => setActionNotice(null), 4000);
                             }}
                             className={`px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm ${
                               isScheduledWin && scheduledPct === 35
@@ -330,10 +340,10 @@ export const AdminLiveTradingTab: React.FC = () => {
 
                           {/* Loss Button */}
                           <button
-                            onClick={() => {
-                              setTradeOutcome(trade.id, 'LOSS', 100);
-                              setActionNotice(`Scheduled Loss for ${trade.userName} on #${trade.id}`);
-                              setTimeout(() => setActionNotice(null), 3000);
+                            onClick={async () => {
+                              const result = await setTradeOutcome(trade.id, 'LOSS', 100);
+                              setActionNotice(result.message);
+                              setTimeout(() => setActionNotice(null), 4000);
                             }}
                             className={`px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm ${
                               isScheduledLoss
@@ -347,12 +357,12 @@ export const AdminLiveTradingTab: React.FC = () => {
 
                           {/* Instant Settle Now Button */}
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               const outcome = isScheduledLoss ? 'LOSS' : 'WIN';
                               const pct = isScheduledLoss ? scheduledPct : (isScheduledWin ? scheduledPct : 35);
-                              adminSettleTrade(trade.id, outcome, pct);
-                              setActionNotice(`Instantly settled #${trade.id} as ${outcome} (${pct}%)!`);
-                              setTimeout(() => setActionNotice(null), 3000);
+                              const result = await adminSettleTrade(trade.id, outcome, Number(pct));
+                              setActionNotice(result.message);
+                              setTimeout(() => setActionNotice(null), 5000);
                             }}
                             className="bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-extrabold text-xs px-2.5 py-1 rounded-lg cursor-pointer shadow-sm shadow-amber-500/20 whitespace-nowrap ml-1"
                             title="Settle trade right now"
@@ -468,8 +478,9 @@ export const AdminLiveTradingTab: React.FC = () => {
                   type="number"
                   min="1"
                   max="5000"
-                  value={customPercentInput}
-                  onChange={(e) => setCustomPercentInput(Math.max(1, Number(e.target.value)))}
+                  step="1"
+                  value={customPercentInput || ''}
+                  onChange={(e) => setCustomPercentInput(e.target.value === '' ? 0 : Number(e.target.value))}
                   className="w-full bg-[#161c2b] border border-[#263148] focus:border-cyan-400 rounded-xl px-3 py-2 text-white font-mono text-sm outline-none"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
@@ -546,9 +557,10 @@ export const AdminLiveTradingTab: React.FC = () => {
               <button
                 type="button"
                 onClick={handleApplyCustomOutcome}
-                className="flex-1 bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 text-black py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-lg shadow-cyan-500/20"
+                disabled={isApplyingOutcome || !Number.isFinite(customPercentInput) || customPercentInput < 1 || customPercentInput > 5000}
+                className="flex-1 bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 disabled:opacity-50 disabled:cursor-not-allowed text-black py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-lg shadow-cyan-500/20"
               >
-                {settleImmediately ? 'Settle Trade Now' : 'Save Scheduled Outcome'}
+                {isApplyingOutcome ? 'Saving...' : settleImmediately ? 'Settle Trade Now' : 'Save Scheduled Outcome'}
               </button>
             </div>
           </div>

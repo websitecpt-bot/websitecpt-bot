@@ -766,13 +766,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!user?.id || skippedDemoIds.has(user.id)) continue;
         const emailKey = String(user.email || '').trim().toLowerCase();
         const uidKey = String(user.uid || '');
+        const idMatch = byId.get(user.id);
         const emailMatch = emailKey ? byEmail.get(emailKey) : undefined;
         const uidMatch = uidKey ? byUid.get(uidKey) : undefined;
-        const existing = byId.get(user.id) || emailMatch || (!emailKey ? uidMatch : undefined);
-        if (!existing && uidMatch && emailKey && String(uidMatch.email || '').trim().toLowerCase() !== emailKey) {
+        const sameEmail = (candidate?: User) =>
+          !candidate?.email || String(candidate.email).trim().toLowerCase() === emailKey;
+        const sameUid = (candidate?: User) =>
+          !candidate?.uid || String(candidate.uid) === uidKey;
+
+        if (idMatch && (!sameEmail(idMatch) || !sameUid(idMatch))) {
+          failures.push(`user ${user.email || user.id}: Firebase document ID exists with a different email or UID; left untouched`);
+          continue;
+        }
+        if (emailMatch && !sameUid(emailMatch)) {
+          failures.push(`user ${user.email || user.id}: Firebase email matches but UID differs; left untouched`);
+          continue;
+        }
+        if (!emailMatch && uidMatch && emailKey && !sameEmail(uidMatch)) {
           failures.push(`user ${user.email || user.id}: UID collision with a different Firebase email; left untouched`);
           continue;
         }
+
+        const existing = idMatch || emailMatch || (!emailKey ? uidMatch : undefined);
         if (existing) {
           userIdMap.set(user.id, existing.id);
           continue;

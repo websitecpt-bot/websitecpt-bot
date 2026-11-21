@@ -50,6 +50,34 @@ export const saveFirebaseDocument = async <T extends object>(
   );
 };
 
+export const scheduleFirebaseTradeOutcome = async (
+  tradeId: string,
+  outcome: 'WIN' | 'LOSS' | null,
+  percent?: number
+): Promise<void> => {
+  const db = getDatabase();
+  const tradeRef = doc(db, 'trades', tradeId);
+
+  if (outcome && (!Number.isFinite(Number(percent)) || Number(percent) < 1 || Number(percent) > 5000)) {
+    throw new Error('Enter a valid scheduled outcome percentage from 1% to 5000%.');
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const tradeSnapshot = await transaction.get(tradeRef);
+    if (!tradeSnapshot.exists()) {
+      throw new Error('The selected trade no longer exists in Firebase.');
+    }
+    if (tradeSnapshot.data().status !== 'OPEN') {
+      throw new Error('This trade has already closed. Its result and balance cannot be changed.');
+    }
+
+    transaction.update(tradeRef, {
+      scheduledOutcome: outcome,
+      scheduledPercent: outcome ? Number(percent) : null,
+    });
+  });
+};
+
 export const fetchFirebaseCollection = async <T>(
   collectionName: string
 ): Promise<T[]> => {
@@ -152,11 +180,22 @@ export const settleFirebaseTrade = async (
     let finalExitPrice = Number(input.marketPrice ?? trade.currentPrice);
     let finalPnl = 0;
     let finalPnlPercent = 0;
-    let scheduledOutcome: 'WIN' | 'LOSS' | null = trade.scheduledOutcome ?? null;
-    let scheduledPercent = trade.scheduledPercent == null ? undefined : Number(trade.scheduledPercent);
 
-    if (input.outcome === 'WIN' || input.outcome === 'LOSS') {
-      const percent = Number(input.percent);
+    // MARKET close/expiry must honor the latest scheduled result stored in Firestore,
+    // not a possibly stale scheduledOutcome value from another browser tab.
+    const effectiveOutcome: 'WIN' | 'LOSS' | 'MARKET' =
+      input.outcome === 'MARKET' &&
+      (trade.scheduledOutcome === 'WIN' || trade.scheduledOutcome === 'LOSS')
+        ? trade.scheduledOutcome
+        : input.outcome;
+    const effectivePercent = input.outcome === 'MARKET'
+      ? Number(trade.scheduledPercent)
+      : Number(input.percent);
+    let scheduledOutcome: 'WIN' | 'LOSS' | null = effectiveOutcome === 'MARKET' ? null : effectiveOutcome;
+    let scheduledPercent: number | undefined = effectiveOutcome === 'MARKET' ? undefined : effectivePercent;
+
+    if (effectiveOutcome === 'WIN' || effectiveOutcome === 'LOSS') {
+      const percent = effectivePercent;
       if (!Number.isFinite(percent) || percent < 1 || percent > 5000 || !Number.isFinite(leverage) || leverage <= 0) {
         throw new Error('Enter a valid settlement percentage from 1% to 5000%.');
       }

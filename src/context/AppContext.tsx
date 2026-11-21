@@ -1664,9 +1664,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         `${trade.userName} (${trade.userId})`,
         `Trade #${trade.id} settled as ${outcome} (${safePercent}% of margin; PnL $${result.trade.pnl}).`
       );
+      const realizedPnl = Number(result.trade.pnl || 0);
+      const creditedReturn = Number((Number(result.trade.margin) + realizedPnl).toFixed(2));
       return {
         success: true,
-        message: `Trade #${tradeId} settled as ${outcome} (${safePercent}%). Customer credited $${(Number(result.trade.margin) + Number(result.trade.pnl)).toFixed(2)}.`,
+        message: `Trade #${tradeId} settled as ${outcome} (${safePercent}%). ${realizedPnl >= 0 ? 'Profit' : 'Loss'}: ${Math.abs(realizedPnl).toFixed(2)}. Margin + result credited: ${creditedReturn.toFixed(2)}.`,
       };
     } catch (error) {
       console.error('[Firebase Trade] Atomic Admin settlement failed:', error, tradeId);

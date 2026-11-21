@@ -364,7 +364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const next = exists ? previous.map((ticket) => ticket.id === agreementTicket.id ? agreementTicket : ticket) : [agreementTicket, ...previous];
       return next.sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
     });
-    if (isSupabaseConfigured()) {
+    {
       const result = await persistSupportTicket(agreementTicket);
       if (!result.success) throw new Error(`Agreement saved on this device, but cloud sync failed: ${result.error || 'Please contact Support.'}`);
     }
@@ -416,7 +416,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unreadUserCount: (targetTicket.unreadUserCount || 0) + 1,
     };
     setSupportTickets((previous) => previous.map((ticket) => ticket.id === targetTicket.id ? updatedTicket : ticket));
-    if (isSupabaseConfigured()) {
+    {
       void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Agreement] Admin status was not saved to cloud:', result.error);
       });
@@ -620,14 +620,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const results = await Promise.allSettled([
         fetchUsersFromSupabase(),
         fetchTradesFromSupabase(),
-        Promise.resolve(null),
         fetchDepositsFromSupabase(),
         fetchWithdrawalsFromSupabase(),
         fetchAuditLogsFromSupabase(),
       ]);
       const cloudUsers = results[0].status === 'fulfilled' ? results[0].value : null;
       const cloudTrades = results[1].status === 'fulfilled' ? results[1].value : null;
-      const cloudTickets = results[2].status === 'fulfilled' ? results[2].value : null;
       const cloudDeposits = results[3].status === 'fulfilled' ? results[3].value : null;
       const cloudWithdrawals = results[4].status === 'fulfilled' ? results[4].value : null;
       const cloudAudit = results[5].status === 'fulfilled' ? results[5].value : null;
@@ -657,9 +655,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
           );
         });
-      }
-      if (cloudTickets && cloudTickets.length > 0) {
-        setSupportTickets((prev) => mergeIncomingTickets(prev, cloudTickets));
       }
       if (cloudDeposits && cloudDeposits.length > 0) {
         setDepositRequests(cloudDeposits);
@@ -729,28 +724,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           );
         });
       },
-      onTicketUpdate: async (payload) => {
-        // Support messages update one ticket row; don't reload every chat history.
-        const ticketId = payload?.new?.id || payload?.old?.id;
-        if (!ticketId || !isMounted) return;
-        if (payload?.eventType === 'DELETE') {
-          setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
-          return;
-        }
-        const cloudTicket = await fetchSupportTicketFromSupabase(ticketId);
-        if (cloudTicket && isMounted) {
-          setSupportTickets((prev) => {
-            const existing = prev.find((ticket) => ticket.id === cloudTicket.id);
-            const mergedTicket = mergeIncomingTickets(existing ? [existing] : [], [cloudTicket])[0];
-            const next = existing
-              ? prev.map((ticket) => ticket.id === cloudTicket.id ? mergedTicket : ticket)
-              : [mergedTicket, ...prev];
-            return next.sort(
-              (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-            );
-          });
-        }
-      },
       onDepositUpdate: async () => {
         const d = await fetchDepositsFromSupabase();
         if (d && isMounted) setDepositRequests(d);
@@ -780,13 +753,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const pollTimer = setInterval(() => {
       if (isMounted) hydrateFromSupabase(false);
     }, 60000);
-    const ticketPollTimer = setInterval(async () => {
-      if (!isMounted) return;
-      const tickets = await fetchTicketsFromSupabase();
-      if (tickets && isMounted) {
-        setSupportTickets((prev) => mergeIncomingTickets(prev, tickets));
-      }
-    }, 180000);
 
     return () => {
       isMounted = false;
@@ -1245,7 +1211,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ],
     };
     let welcomeTicketSaved = !isSupabaseConfigured();
-    if (isSupabaseConfigured()) {
+    {
       const ticketSave = await persistSupportTicket(welcomeTicket);
       welcomeTicketSaved = ticketSave.success;
       if (!ticketSave.success) {
@@ -1943,7 +1909,7 @@ if (failed) {
       lastMessageTime: nowStr,
     };
     setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
-    if (isSupabaseConfigured()) {
+    {
       void persistSupportTicket(updated).then((result) => {
         if (!result.success) console.error('[Support] Reopened ticket was not saved:', result.error);
       });
@@ -1953,7 +1919,7 @@ if (failed) {
   const deleteSupportTicket = (ticketId: string) => {
     const targetTicket = supportTickets.find((ticket) => ticket.id === ticketId);
     setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
-    if (isSupabaseConfigured()) {
+    {
       void deleteFirebaseDocument('supportTickets', ticketId).then((result) => {
         if (!result.success) console.error('[Support] Ticket deletion was not saved:', result.error);
       });
@@ -1974,7 +1940,7 @@ if (failed) {
           m.id === messageId ? { ...m, text: newText.trim(), isEdited: true } : m
         );
         const updatedTicket = { ...t, messages: updatedMsgs };
-        if (isSupabaseConfigured()) {
+        {
           persistSupportTicket(updatedTicket).catch((e) => console.warn('Edit msg sync notice:', e));
         }
         return updatedTicket;
@@ -1998,7 +1964,7 @@ if (failed) {
             : m
         );
         const updatedTicket = { ...t, messages: updatedMsgs };
-        if (isSupabaseConfigured()) {
+        {
           persistSupportTicket(updatedTicket).catch((e) => console.warn('Delete msg sync notice:', e));
         }
         return updatedTicket;
@@ -2097,7 +2063,7 @@ if (!save.success) {
         .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
     });
 
-    if (isSupabaseConfigured()) {
+    {
       void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Support] System notification was not saved:', result.error);
       });
@@ -2119,7 +2085,7 @@ if (!save.success) {
       isSessionClosed: status === 'closed',
     };
     setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
-    if (isSupabaseConfigured()) {
+    {
       void persistSupportTicket(updated).then((result) => {
         if (!result.success) console.error('[Support] Ticket status was not saved:', result.error);
       });
@@ -2135,7 +2101,7 @@ if (!save.success) {
         ticket.userId === currentUser.id ? { ...ticket, unreadUserCount: 0 } : ticket
       )
     );
-    if (isSupabaseConfigured()) {
+    {
       unreadTickets.forEach((ticket) => {
         void persistSupportTicket({ ...ticket, unreadUserCount: 0 }).then((result) => {
           if (!result.success) console.error('[Support] Read status was not saved:', result.error);
@@ -2209,7 +2175,7 @@ if (!save.success) {
       );
     });
 
-    if (isSupabaseConfigured()) {
+    {
       void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Support] Customer Support visit was not saved:', result.error);
       });

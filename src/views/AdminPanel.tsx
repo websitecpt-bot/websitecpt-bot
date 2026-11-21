@@ -38,6 +38,23 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase';
 import { AdminLiveTradingTab } from './admin/AdminLiveTradingTab';
 
+const readAdminSession = (): boolean => {
+  try {
+    return window.sessionStorage.getItem('cpt_admin_auth') === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const writeAdminSession = (authenticated: boolean) => {
+  try {
+    if (authenticated) window.sessionStorage.setItem('cpt_admin_auth', 'true');
+    else window.sessionStorage.removeItem('cpt_admin_auth');
+  } catch (error) {
+    console.warn('[Admin Session] Browser session storage is unavailable:', error);
+  }
+};
+
 export const AdminPanel: React.FC = () => {
   const {
     setActiveTab,
@@ -64,9 +81,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   // Admin security authentication — username and password kept strictly confidential
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('cpt_admin_auth') === 'true';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(readAdminSession);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -115,7 +130,7 @@ export const AdminPanel: React.FC = () => {
         switchUser(superAdminUser.id);
       }
       setIsAuthenticated(true);
-      sessionStorage.setItem('cpt_admin_auth', 'true');
+      writeAdminSession(true);
       setAuthError('');
       if (typeof window !== 'undefined') {
         window.history.pushState({}, '', '/admin');
@@ -127,7 +142,7 @@ export const AdminPanel: React.FC = () => {
 
   const handleAdminLogout = () => {
     setIsAuthenticated(false);
-    sessionStorage.removeItem('cpt_admin_auth');
+    writeAdminSession(false);
     setActiveTab('login');
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', '/login');

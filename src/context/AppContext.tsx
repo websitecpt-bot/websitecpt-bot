@@ -643,7 +643,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     lastMessageTime: String(value?.lastMessageTime || new Date().toISOString()),
     unreadAdminCount: Number(value?.unreadAdminCount || 0),
     unreadUserCount: Number(value?.unreadUserCount || 0),
-    messages: Array.isArray(value?.messages) ? value.messages : [],
+    messages: Array.isArray(value?.messages)
+      ? value.messages
+          .filter((message: any) => message && typeof message === 'object')
+          .map((message: any, index: number) => ({
+            ...message,
+            id: String(message.id || `message-${index}`),
+            sender: message.sender === 'admin' ? 'admin' : 'user',
+            senderName: String(message.senderName || (message.sender === 'admin' ? 'Admin Team' : value?.userName || 'Customer')),
+            text: String(message.text || ''),
+            timestamp: String(message.timestamp || value?.lastMessageTime || new Date().toISOString()),
+            read: Boolean(message.read),
+          }))
+      : [],
   });
 
   const refreshAllFromFirebase = async () => {

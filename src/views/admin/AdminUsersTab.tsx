@@ -82,9 +82,9 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' | 'archived' 
     if (!isInSection) return false;
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
-    return user.name.toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q) ||
-      user.uid.toLowerCase().includes(q) ||
+    return String(user.name || '').toLowerCase().includes(q) ||
+      String(user.email || '').toLowerCase().includes(q) ||
+      String(user.uid || '').toLowerCase().includes(q) ||
       (user.phone || '').toLowerCase().includes(q);
   }).sort((a, b) => {
     const aPinned = pinnedCustomerIds.includes(a.id);
@@ -210,7 +210,7 @@ export const AdminUsersTab: React.FC<{ segment: 'new' | 'existing' | 'archived' 
                           <Pin className="w-3.5 h-3.5" />
                         </button>
                         <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 font-bold flex items-center justify-center text-xs">
-                          {user.name.charAt(0).toUpperCase()}
+                          {String(user.name || 'U').charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">

@@ -7,11 +7,13 @@ import {
   RotateCcw,
   AlertTriangle,
   CheckCircle2,
+  Database,
+  UploadCloud,
 } from 'lucide-react';
 import { isFirebaseConfigured } from '../../lib/firebase';
 
 export const AdminSettingsTab: React.FC = () => {
-  const { systemSettings, updateSystemSettings, resetAllData } = useApp();
+  const { systemSettings, updateSystemSettings, resetAllData, migrateCachedDataToFirebase } = useApp();
 
   const [platformName, setPlatformName] = useState(systemSettings.platformName);
   const [supportEmail, setSupportEmail] = useState(systemSettings.supportEmail);
@@ -22,6 +24,8 @@ export const AdminSettingsTab: React.FC = () => {
   const [minWithdrawal, setMinWithdrawal] = useState(systemSettings.minWithdrawal.toString());
   const [maintenanceMode, setMaintenanceMode] = useState(systemSettings.maintenanceMode);
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillFeedback, setBackfillFeedback] = useState<string | null>(null);
   const firebaseConfigured = isFirebaseConfigured();
 
   const handleSave = (e: React.FormEvent) => {
@@ -262,6 +266,46 @@ export const AdminSettingsTab: React.FC = () => {
           <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-[11px] leading-relaxed text-rose-200">
             Firebase configuration is missing. Check the VITE_FIREBASE_* environment variables in Vercel and redeploy before accepting customer activity.
           </p>
+        )}
+      </div>
+
+      {/* Non-destructive legacy cache backfill */}
+      <div className="rounded-2xl border border-amber-500/30 bg-[#151923] p-4 shadow-xl sm:p-6 space-y-3">
+        <div className="flex items-center gap-2 text-amber-300">
+          <Database className="h-4 w-4" />
+          <h3 className="text-sm font-bold text-white">Legacy Customer Data Backfill</h3>
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-300">
+          Copy the customer accounts and records retained in this browser's previous app cache into Firebase. Existing Firebase documents are never overwritten; matching accounts are linked by their account ID or email, and legacy passwords are excluded.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            disabled={!firebaseConfigured || isBackfilling}
+            onClick={async () => {
+              if (!window.confirm('Copy missing legacy records from this browser cache into Firebase? Existing Firebase records will not be overwritten, and passwords will not be copied.')) return;
+              setIsBackfilling(true);
+              setBackfillFeedback(null);
+              try {
+                const result = await migrateCachedDataToFirebase();
+                setBackfillFeedback(result.summary);
+              } catch (error) {
+                setBackfillFeedback(error instanceof Error ? error.message : 'Legacy data backfill could not be completed.');
+              } finally {
+                setIsBackfilling(false);
+              }
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/15 px-4 py-2.5 text-xs font-bold text-amber-200 transition-colors hover:bg-amber-400/25 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <UploadCloud className="h-4 w-4" />
+            {isBackfilling ? 'Copying Missing Records...' : 'Backfill This Browser Cache to Firebase'}
+          </button>
+          <span className="text-[10px] text-slate-500">Does not update existing Firebase balances or trade history.</span>
+        </div>
+        {backfillFeedback && (
+          <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/10 p-3 text-[11px] leading-relaxed text-cyan-100 break-words">
+            {backfillFeedback}
+          </div>
         )}
       </div>
 

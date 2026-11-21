@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Download, FileText, ImageOff } from 'lucide-react';
-import { getSupportAttachmentUrl } from '../lib/supabase';
 
 interface SupportAttachmentProps {
   reference: string;
@@ -26,22 +25,19 @@ export const SupportAttachment: React.FC<SupportAttachmentProps> = ({
     setLoading(true);
     setError('');
 
-    Promise.all([
-      getSupportAttachmentUrl(reference),
-      getSupportAttachmentUrl(reference, true, name),
-    ])
-      .then(([preview, download]) => {
-        if (!active) return;
-        setPreviewUrl(preview);
-        setDownloadUrl(download);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : 'Unable to load attachment.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    // Current messages store a data URL or a direct Firebase download URL.
+    // Legacy storage:// references belong to a retired storage provider and are not queried.
+    if (reference.startsWith('storage://')) {
+      setError('This is an older attachment from the previous storage service.');
+      setLoading(false);
+    } else if (/^(https?:|data:|blob:)/i.test(reference)) {
+      setPreviewUrl(reference);
+      setDownloadUrl(reference);
+      setLoading(false);
+    } else {
+      setError('Unsupported attachment reference.');
+      setLoading(false);
+    }
 
     return () => {
       active = false;

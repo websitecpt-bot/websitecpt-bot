@@ -7,11 +7,13 @@ import {
   RotateCcw,
   AlertTriangle,
   CheckCircle2,
+  Database,
+  UploadCloud,
 } from 'lucide-react';
-import { getSupabaseConfigStatus } from '../../lib/supabase';
+import { isFirebaseConfigured } from '../../lib/firebase';
 
 export const AdminSettingsTab: React.FC = () => {
-  const { systemSettings, updateSystemSettings, resetAllData } = useApp();
+  const { systemSettings, updateSystemSettings, resetAllData, migrateCachedDataToFirebase } = useApp();
 
   const [platformName, setPlatformName] = useState(systemSettings.platformName);
   const [supportEmail, setSupportEmail] = useState(systemSettings.supportEmail);
@@ -22,7 +24,9 @@ export const AdminSettingsTab: React.FC = () => {
   const [minWithdrawal, setMinWithdrawal] = useState(systemSettings.minWithdrawal.toString());
   const [maintenanceMode, setMaintenanceMode] = useState(systemSettings.maintenanceMode);
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
-  const supabaseConfig = getSupabaseConfigStatus();
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillFeedback, setBackfillFeedback] = useState<string | null>(null);
+  const firebaseConfigured = isFirebaseConfigured();
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,62 +229,87 @@ export const AdminSettingsTab: React.FC = () => {
         </div>
       </form>
 
-      {/* Shared Cloud Database Configuration */}
+      {/* Shared Firebase Database Configuration */}
       <div className="bg-[#121622] border border-[#21293c] rounded-2xl p-6 shadow-xl space-y-4 text-xs">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-cyan-400" />
-              <span>Shared Supabase Database</span>
+              <span>Firebase Firestore Database</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              All customer devices and Admin must use the same Vercel deployment database configuration.
+              Customer and Admin data now share the same Firebase project and update across devices in real time.
             </p>
           </div>
           <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono border ${
-            supabaseConfig.isConfigured
+            firebaseConfigured
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
               : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
           }`}>
-            {supabaseConfig.isConfigured ? 'SHARED CONFIG FOUND' : 'VERCEL CONFIG MISSING'}
+            {firebaseConfigured ? 'FIREBASE CONFIGURED' : 'FIREBASE NOT CONFIGURED'}
           </span>
         </div>
 
         <div className="rounded-xl border border-[#253149] bg-[#0d1421] p-3 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-slate-400">Shared project URL</span>
-            <span className="font-mono text-cyan-300 break-all">{supabaseConfig.urlPreview}</span>
+          <div className="text-slate-400">Cloud collections used by this app</div>
+          <div className="flex flex-wrap gap-2">
+            {['users', 'supportTickets', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'marketCoins', 'marketSettings', 'systemSettings'].map((name) => (
+              <span key={name} className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 font-mono text-[10px] text-cyan-200">{name}</span>
+            ))}
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-slate-400">Connection source</span>
-            <span className="font-semibold text-white">Vercel Environment Variables</span>
-          </div>
-          <div className="text-[10px] leading-relaxed text-slate-500">
-            Production no longer uses browser-specific Supabase URL or key values. This prevents one device from saving customer activity to a different database from the other devices.
-          </div>
+          <p className="text-[10px] leading-relaxed text-slate-500">
+            Firestore creates each collection automatically when the app saves its first document. Do not delete collections or change the Firebase project while customer accounts and messages are in use.
+          </p>
         </div>
 
-        {!supabaseConfig.isConfigured && (
+        {!firebaseConfigured && (
           <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-[11px] leading-relaxed text-rose-200">
-            The shared production configuration is missing. In Vercel, verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set for Production, then redeploy. Do not enter a separate database on an individual device.
+            Firebase configuration is missing. Check the VITE_FIREBASE_* environment variables in Vercel and redeploy before accepting customer activity.
           </p>
         )}
+      </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[10px] text-slate-500">This action only clears old browser-specific connection overrides. It does not clear customer accounts, balances, trades, chats or any database records.</p>
+      {/* Non-destructive legacy cache backfill */}
+      <div className="rounded-2xl border border-amber-500/30 bg-[#151923] p-4 shadow-xl sm:p-6 space-y-3">
+        <div className="flex items-center gap-2 text-amber-300">
+          <Database className="h-4 w-4" />
+          <h3 className="text-sm font-bold text-white">Legacy Customer Data Backfill</h3>
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-300">
+          Copy the customer accounts and records retained in this browser's previous app cache into Firebase. Existing Firebase documents are never overwritten; matching accounts are linked by their account ID or email, and legacy passwords are excluded.
+        </p>
+        <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-2.5 text-[10px] leading-relaxed text-amber-100">
+          Important: this copies only what is still cached in this browser. The cache may be older than the last Supabase database snapshot. Compare the customer balances against the latest source records before running it; this tool does not contact Supabase or guarantee that the browser cache is complete.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            onClick={() => {
-              localStorage.removeItem('cpt_supabase_url');
-              localStorage.removeItem('cpt_supabase_key');
-              setSavedFeedback('Old browser-specific database overrides cleared. Reloading with the shared Vercel configuration...');
-              setTimeout(() => window.location.reload(), 800);
+            disabled={!firebaseConfigured || isBackfilling}
+            onClick={async () => {
+              if (!window.confirm('Copy missing legacy records from this browser cache into Firebase? Existing Firebase records will not be overwritten, and passwords will not be copied.')) return;
+              setIsBackfilling(true);
+              setBackfillFeedback(null);
+              try {
+                const result = await migrateCachedDataToFirebase();
+                setBackfillFeedback(result.summary);
+              } catch (error) {
+                setBackfillFeedback(error instanceof Error ? error.message : 'Legacy data backfill could not be completed.');
+              } finally {
+                setIsBackfilling(false);
+              }
             }}
-            className="shrink-0 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/20"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/15 px-4 py-2.5 text-xs font-bold text-amber-200 transition-colors hover:bg-amber-400/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Use Shared Database
+            <UploadCloud className="h-4 w-4" />
+            {isBackfilling ? 'Copying Missing Records...' : 'Backfill This Browser Cache to Firebase'}
           </button>
+          <span className="text-[10px] text-slate-500">Does not update existing Firebase balances or trade history.</span>
         </div>
+        {backfillFeedback && (
+          <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/10 p-3 text-[11px] leading-relaxed text-cyan-100 break-words">
+            {backfillFeedback}
+          </div>
+        )}
       </div>
 
       {/* Danger Zone */}

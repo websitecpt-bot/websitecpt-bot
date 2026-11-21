@@ -118,6 +118,15 @@ export const OrderHistoryView: React.FC = () => {
         ) : (
           completedTradesList.map((trade) => {
             const isProfit = trade.pnl >= 0;
+            const isBreakEven = Math.abs(trade.pnl) < 0.005;
+            const realizedPercent = trade.margin > 0
+              ? Math.abs((trade.pnl / trade.margin) * 100)
+              : Math.abs(Number(trade.pnlPercent || 0));
+            const resultLabel = isBreakEven
+              ? 'BREAK EVEN'
+              : isProfit
+                ? `WIN +${realizedPercent.toFixed(2)}%`
+                : `LOSS -${realizedPercent.toFixed(2)}%`;
             return (
               <div
                 key={trade.id}
@@ -135,6 +144,17 @@ export const OrderHistoryView: React.FC = () => {
                       }`}
                     >
                       {trade.type} {trade.leverage}x
+                    </span>
+                    <span
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                        isBreakEven
+                          ? 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+                          : isProfit
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                      }`}
+                    >
+                      {resultLabel}
                     </span>
                   </div>
                   <div className="text-xs text-slate-400 font-mono">

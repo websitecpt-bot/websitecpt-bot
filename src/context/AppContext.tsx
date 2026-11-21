@@ -1100,7 +1100,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let authenticatedUserId = `user-${uid}`;
 
-    // Firebase is the primary authentication provider. Do not block registration on Supabase quota/service status.
+    // Firebase is the primary authentication provider. Do not block registration on unrelated legacy service status.
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     const newUser: User = {
@@ -1200,7 +1200,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const clean = identifier.trim().toLowerCase();
     let firebaseFound: User | undefined;
 
-    // Firebase user profiles keep login working even when Supabase is restricted.
+    // Firebase user profiles keep login working independently of the previous database.
     if (isFirebaseConfigured()) {
       try {
         const firebaseUsers = await fetchFirebaseCollection<User>('users');
@@ -1250,7 +1250,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Authentication is Firebase-only. For a legacy profile not yet migrated,
       // verify its locally stored legacy password before creating its Firebase Auth account.
-      // No Supabase Auth request is made here.
+      // Authentication is performed only by Firebase Auth.
       const legacyAuthVerified = Boolean(found.password && password === found.password);
 
       try {

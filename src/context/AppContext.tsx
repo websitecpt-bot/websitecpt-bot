@@ -621,46 +621,119 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return Array.from(merged.values());
   };
 
-  const normalizeFirebaseUser = (value: any): User => ({
-    ...value,
-    id: String(value?.id || ''),
-    uid: String(value?.uid || ''),
-    name: String(value?.name || 'Unknown Customer'),
-    email: String(value?.email || ''),
-    phone: value?.phone ? String(value.phone) : undefined,
-    tradingBalance: Number(value?.tradingBalance || 0),
-    fundingBalance: Number(value?.fundingBalance || 0),
-    status: value?.status === 'suspended' || value?.status === 'archived' ? value.status : 'active',
-    isOnline: Boolean(value?.isOnline),
-    createdAt: String(value?.createdAt || ''),
-    lastLogin: String(value?.lastLogin || ''),
-  });
+  const hasUsableCustomerLabel = (value: unknown): value is string => {
+    if (typeof value !== 'string') return false;
+    const clean = value.trim();
+    return Boolean(clean) && !/^(unknown customer|unknown user|customer|unknown)$/i.test(clean);
+  };
 
-  const normalizeSupportTicket = (value: any): SupportTicket => ({
-    ...value,
-    id: String(value?.id || ''),
-    userId: String(value?.userId || ''),
-    userName: String(value?.userName || 'Unknown Customer'),
-    userEmail: String(value?.userEmail || ''),
-    status: value?.status === 'closed' || value?.status === 'answered' ? value.status : 'pending',
-    lastMessage: String(value?.lastMessage || ''),
-    lastMessageTime: String(value?.lastMessageTime || new Date().toISOString()),
-    unreadAdminCount: Number(value?.unreadAdminCount || 0),
-    unreadUserCount: Number(value?.unreadUserCount || 0),
-    messages: Array.isArray(value?.messages)
-      ? value.messages
-          .filter((message: any) => message && typeof message === 'object')
-          .map((message: any, index: number) => ({
-            ...message,
-            id: String(message.id || `message-${index}`),
-            sender: message.sender === 'admin' ? 'admin' : 'user',
-            senderName: String(message.senderName || (message.sender === 'admin' ? 'Admin Team' : value?.userName || 'Customer')),
-            text: String(message.text || ''),
-            timestamp: String(message.timestamp || value?.lastMessageTime || new Date().toISOString()),
-            read: Boolean(message.read),
-          }))
-      : [],
-  });
+  const normalizeFirebaseUser = (
+    value: any,
+    tradeHistory: Trade[] = trades,
+    ticketHistory: SupportTicket[] = supportTickets
+  ): User => {
+    const id = String(value?.id || value?.userId || '');
+    const emailKey = String(value?.email || '').trim().toLowerCase();
+    const uidKey = String(value?.uid || '');
+    const localProfile = users.find((user) =>
+      (id && user.id === id) ||
+      (emailKey && String(user.email || '').trim().toLowerCase() === emailKey) ||
+      (uidKey && String(user.uid || '') === uidKey)
+    );
+    const seededProfile = initialUsers.find((user) =>
+      (id && user.id === id) ||
+      (emailKey && String(user.email || '').trim().toLowerCase() === emailKey) ||
+      (uidKey && String(user.uid || '') === uidKey)
+    );
+    const relatedTickets = ticketHistory
+      .filter((ticket) => ticket.userId === id)
+      .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
+    const relatedTrades = tradeHistory
+      .filter((trade) => trade.userId === id)
+      .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime());
+    const ticketProfile = relatedTickets.find((ticket) => hasUsableCustomerLabel(ticket.userName));
+    const tradeProfile = relatedTrades.find((trade) => hasUsableCustomerLabel(trade.userName));
+    const inferredUid = id.match(/^user[-_](\d+)$/)?.[1] || '';
+
+    const name = [
+      value?.name,
+      localProfile?.name,
+      ticketProfile?.userName,
+      tradeProfile?.userName,
+      seededProfile?.name,
+    ].find(hasUsableCustomerLabel) || 'Customer profile syncing';
+    const uid = String(value?.uid || localProfile?.uid || seededProfile?.uid || inferredUid);
+    const email = String(value?.email || localProfile?.email || ticketProfile?.userEmail || seededProfile?.email || '');
+
+    return {
+      ...seededProfile,
+      ...localProfile,
+      ...value,
+      id: id || String(localProfile?.id || seededProfile?.id || ''),
+      uid,
+      name,
+      email,
+      phone: value?.phone || localProfile?.phone || seededProfile?.phone || undefined,
+      tradingBalance: Number(value?.tradingBalance ?? localProfile?.tradingBalance ?? seededProfile?.tradingBalance ?? 0),
+      fundingBalance: Number(value?.fundingBalance ?? localProfile?.fundingBalance ?? seededProfile?.fundingBalance ?? 0),
+      status: value?.status === 'suspended' || value?.status === 'archived'
+        ? value.status
+        : localProfile?.status || seededProfile?.status || 'active',
+      isOnline: Boolean(value?.isOnline ?? localProfile?.isOnline ?? false),
+      createdAt: String(value?.createdAt || localProfile?.createdAt || seededProfile?.createdAt || ''),
+      lastLogin: String(value?.lastLogin || localProfile?.lastLogin || seededProfile?.lastLogin || ''),
+      role: value?.role || localProfile?.role || seededProfile?.role,
+    } as User;
+  };
+
+  const normalizeSupportTicket = (value: any): SupportTicket => {
+    const userId = String(value?.userId || '');
+    const emailKey = String(value?.userEmail || '').trim().toLowerCase();
+    const profile = users.find((user) =>
+      user.id === userId ||
+      (emailKey && String(user.email || '').trim().toLowerCase() === emailKey)
+    );
+    const relatedTrade = trades
+      .filter((trade) => trade.userId === userId && hasUsableCustomerLabel(trade.userName))
+      .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime())[0];
+    const userMessageSender = Array.isArray(value?.messages)
+      ? value.messages.find((message: any) => message?.sender !== 'admin' && hasUsableCustomerLabel(message?.senderName))?.senderName
+      : '';
+    const userName = [
+      value?.userName,
+      profile?.name,
+      relatedTrade?.userName,
+      userMessageSender,
+    ].find(hasUsableCustomerLabel) || 'Customer profile syncing';
+
+    return {
+      ...value,
+      id: String(value?.id || ''),
+      userId,
+      userName,
+      userEmail: String(value?.userEmail || profile?.email || ''),
+      status: value?.status === 'closed' || value?.status === 'answered' ? value.status : 'pending',
+      lastMessage: String(value?.lastMessage || ''),
+      lastMessageTime: String(value?.lastMessageTime || new Date().toISOString()),
+      unreadAdminCount: Number(value?.unreadAdminCount || 0),
+      unreadUserCount: Number(value?.unreadUserCount || 0),
+      messages: Array.isArray(value?.messages)
+        ? value.messages
+            .filter((message: any) => message && typeof message === 'object')
+            .map((message: any, index: number) => ({
+              ...message,
+              id: String(message.id || `message-${index}`),
+              sender: message.sender === 'admin' ? 'admin' : 'user',
+              senderName: hasUsableCustomerLabel(message.senderName)
+                ? String(message.senderName)
+                : message.sender === 'admin' ? 'Admin Team' : userName,
+              text: String(message.text || ''),
+              timestamp: String(message.timestamp || value?.lastMessageTime || new Date().toISOString()),
+              read: Boolean(message.read),
+            }))
+        : [],
+    };
+  };
 
   const refreshAllFromFirebase = async () => {
     if (!isFirebaseConfigured()) {

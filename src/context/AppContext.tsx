@@ -362,7 +362,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     {
       const result = await persistSupportTicket(agreementTicket);
-      if (!result.success) throw new Error(`Agreement saved on this device, but cloud sync failed: ${result.error || 'Please contact Support.'}`);
+      if (!result.success) throw new Error(`Agreement was not saved to Firebase: ${result.error || 'Please try again.'}`);
     }
 
     const newLog: AuditLog = {
@@ -1206,7 +1206,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
       ],
     };
-    let welcomeTicketSaved = !isSupabaseConfigured();
+    let welcomeTicketSaved = isFirebaseConfigured();
     {
       const ticketSave = await persistSupportTicket(welcomeTicket);
       welcomeTicketSaved = ticketSave.success;
@@ -1884,8 +1884,10 @@ if (failed) {
       )
     );
     const targetTicket = supportTickets.find((t) => t.id === ticketId);
-    if (targetTicket && isSupabaseConfigured()) {
-      persistSupportTicket({ ...targetTicket, status: 'closed', isSessionClosed: true }).catch((e) => console.warn('Close ticket sync notice:', e));
+    if (targetTicket) {
+      void persistSupportTicket({ ...targetTicket, status: 'closed', isSessionClosed: true }).then((result) => {
+        if (!result.success) console.error('[Firebase Support] Close ticket save failed:', result.error);
+      });
     }
     logAuditAction(
       'SUPPORT_SESSION_CLOSED',

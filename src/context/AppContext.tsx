@@ -29,7 +29,7 @@ import {
   initialSystemSettings,
   OFFICIAL_REFERRAL_CODES,
 } from '../data/initialData';
-import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword } from '../lib/firebaseAuth';
+import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword, logoutFromFirebase } from '../lib/firebaseAuth';
 import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
@@ -1303,6 +1303,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logoutUser = () => {
+    void logoutFromFirebase().catch((error) => {
+      console.warn('[Firebase Auth] Sign-out notice:', error);
+    });
     setIsUserLoggedIn(false);
     setActiveTab('login');
     if (typeof window !== 'undefined') {

@@ -233,10 +233,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => loadState('tickets', initialSupportTickets));
 
   // Support conversations are stored and synchronized through Firebase only.
+  // Firestore rejects undefined values, so omit optional fields before saving.
+  const removeUndefinedSupportValues = (value: any): any => {
+    if (Array.isArray(value)) {
+      return value.map((item) => item === undefined ? null : removeUndefinedSupportValues(item));
+    }
+    if (value && typeof value === 'object' && !(value instanceof Date)) {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([, item]) => item !== undefined)
+          .map(([key, item]) => [key, removeUndefinedSupportValues(item)])
+      );
+    }
+    return value;
+  };
+
   const persistSupportTicket = async (ticket: SupportTicket): Promise<{ success: boolean; error?: string }> => {
     if (!isFirebaseConfigured()) return { success: false, error: 'Firebase is not configured.' };
     try {
-      await saveFirebaseDocument('supportTickets', ticket.id, ticket);
+      const firestoreSafeTicket = removeUndefinedSupportValues(ticket) as SupportTicket;
+      await saveFirebaseDocument('supportTickets', ticket.id, firestoreSafeTicket);
       return { success: true };
     } catch (error) {
       console.error('[Firebase Support] Save failed:', error);

@@ -47,7 +47,9 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleLocation);
   }, [isUserLoggedIn, setActiveTab]);
 
-  const isMaintenanceActive = Boolean(systemSettings.maintenanceMode && !isAdmin);
+  // Public access is restored: visitors can reach Login/Register and existing users can use the platform.
+  // Keep the maintenance screen disabled during the Firebase integration checks.
+  const isMaintenanceActive = false;
   const showHeader = isUserLoggedIn && activeTab !== 'login' && activeTab !== 'admin' && activeTab !== 'agreement' && !isMaintenanceActive;
 
   return (

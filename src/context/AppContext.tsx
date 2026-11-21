@@ -29,37 +29,14 @@ import {
   initialSystemSettings,
   OFFICIAL_REFERRAL_CODES,
 } from '../data/initialData';
-import {
-  isSupabaseConfigured,
-  getSupabaseConfigStatus,
-  fetchUsersFromSupabase,
-  fetchTradesFromSupabase,
-  fetchTradeFromSupabase,
-  fetchTicketsFromSupabase,
-  fetchSupportTicketFromSupabase,
-  fetchDepositsFromSupabase,
-  fetchWithdrawalsFromSupabase,
-  fetchAuditLogsFromSupabase,
-  syncUserToSupabase,
-  updateUserBalanceInSupabase,
-  updateUserStatusInSupabase,
-  syncTradeToSupabase,
-  syncTicketToSupabase,
-  syncDepositToSupabase,
-  updateDepositStatusInSupabase,
-  syncWithdrawalToSupabase,
-  updateWithdrawalStatusInSupabase,
-  syncAuditLogToSupabase,
-  deleteSupportTicketFromSupabase,
-  subscribeToSupabaseRealtime,
-  supabaseAuthSignUp,
-  supabaseAuthSignIn,
-} from '../lib/supabase';
+import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword, logoutFromFirebase } from '../lib/firebaseAuth';
+import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection } from '../lib/firebaseData';
+import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
-  // Supabase Cloud Sync
-  refreshAllFromSupabase: () => Promise<void>;
-  isSupabaseSynced: boolean;
+  // Firebase Cloud Sync
+  refreshAllFromFirebase: () => Promise<void>;
+  isFirebaseSynced: boolean;
 
   // Current user & Auth
   users: User[];
@@ -234,6 +211,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC');
   const [trades, setTrades] = useState<Trade[]>(() => loadState('trades', initialTrades));
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => loadState('tickets', initialSupportTickets));
+
+  // Support conversations are stored and synchronized through Firebase only.
+  // Firestore rejects undefined values, so omit optional fields before saving.
+  const removeUndefinedSupportValues = (value: any): any => {
+    if (Array.isArray(value)) {
+      return value.map((item) => item === undefined ? null : removeUndefinedSupportValues(item));
+    }
+    if (value && typeof value === 'object' && !(value instanceof Date)) {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([, item]) => item !== undefined)
+          .map(([key, item]) => [key, removeUndefinedSupportValues(item)])
+      );
+    }
+    return value;
+  };
+
+  const persistSupportTicket = async (ticket: SupportTicket): Promise<{ success: boolean; error?: string }> => {
+    if (!isFirebaseConfigured()) return { success: false, error: 'Firebase is not configured.' };
+    try {
+      const firestoreSafeTicket = removeUndefinedSupportValues(ticket) as SupportTicket;
+      await saveFirebaseDocument('supportTickets', ticket.id, firestoreSafeTicket);
+      return { success: true };
+    } catch (error) {
+      console.error('[Firebase Support] Save failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Firebase save failed.' };
+    }
+  };
   const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>(() => loadState('adjustments', initialBalanceAdjustments));
   const [depositRequests, setDepositRequests] = useState<DepositRequest[]>(() => loadState('deposits', initialDepositRequests));
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>(() => loadState('withdrawals', initialWithdrawalRequests));
@@ -349,9 +354,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const next = exists ? previous.map((ticket) => ticket.id === agreementTicket.id ? agreementTicket : ticket) : [agreementTicket, ...previous];
       return next.sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
     });
-    if (isSupabaseConfigured()) {
-      const result = await syncTicketToSupabase(agreementTicket);
-      if (!result.success) throw new Error(`Agreement saved on this device, but cloud sync failed: ${result.error || 'Please contact Support.'}`);
+    {
+      const result = await persistSupportTicket(agreementTicket);
+      if (!result.success) throw new Error(`Agreement was not saved to Firebase: ${result.error || 'Please try again.'}`);
     }
 
     const newLog: AuditLog = {
@@ -401,8 +406,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unreadUserCount: (targetTicket.unreadUserCount || 0) + 1,
     };
     setSupportTickets((previous) => previous.map((ticket) => ticket.id === targetTicket.id ? updatedTicket : ticket));
-    if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
+    {
+      void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Agreement] Admin status was not saved to cloud:', result.error);
       });
     }
@@ -532,15 +537,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorageSet('language', language);
   }, [language]);
 
-  const [marketDataMode, setMarketDataMode] = useState<'live_stream' | 'manual_benchmark'>(() =>
+  const [marketDataMode, setMarketDataModeState] = useState<'live_stream' | 'manual_benchmark'>(() =>
     loadState('marketDataMode', 'live_stream')
   );
+  const setMarketDataMode = (mode: 'live_stream' | 'manual_benchmark') => {
+    setMarketDataModeState(mode);
+    if (isFirebaseConfigured()) {
+      void saveFirebaseDocument('marketSettings', 'global', { marketDataMode: mode })
+        .catch((error) => console.warn('[Firebase Market] Market mode sync failed:', error));
+    }
+  };
 
   useEffect(() => {
     safeStorageSet('marketDataMode', marketDataMode);
   }, [marketDataMode]);
 
-  // Keep the app available if this browser has a stale empty customer cache.
+  // Keep the application and Admin portal usable if a device has a stale empty local users cache.
   const currentUser = users.find((u) => u.id === currentUserId) || users[0] || initialUsers.find((u) => u.role === 'superadmin') || initialUsers[0];
   const isSuperAdmin =
     currentUser.role === 'superadmin' ||
@@ -548,7 +560,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUser.uid === '100001';
   const activeCoin = coins.find((c) => c.symbol === selectedSymbol) || coins[0];
 
-  const [isSupabaseSynced, setIsSupabaseSynced] = useState<boolean>(() => isSupabaseConfigured());
+  const [isFirebaseSynced, setIsFirebaseSynced] = useState<boolean>(() => isFirebaseConfigured());
 
   // Non-destructive WhatsApp-style ticket merge: ensures zero message drops & keeps latest order
   const mergeIncomingTickets = (prev: SupportTicket[], incoming: SupportTicket[]): SupportTicket[] => {
@@ -597,190 +609,187 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Central Supabase Cloud Sync & Realtime Listener
-  const hydrateFromSupabase = async (includeTickets = true) => {
-    if (!isSupabaseConfigured()) return;
-    try {
-      // Fetch each data group independently. A timeout in the large support-chat
-      // table must never prevent accounts, balances, trades or requests from loading.
-      const results = await Promise.allSettled([
-        fetchUsersFromSupabase(),
-        fetchTradesFromSupabase(),
-        includeTickets ? fetchTicketsFromSupabase() : Promise.resolve(null),
-        fetchDepositsFromSupabase(),
-        fetchWithdrawalsFromSupabase(),
-        fetchAuditLogsFromSupabase(),
-      ]);
-      const cloudUsers = results[0].status === 'fulfilled' ? results[0].value : null;
-      const cloudTrades = results[1].status === 'fulfilled' ? results[1].value : null;
-      const cloudTickets = results[2].status === 'fulfilled' ? results[2].value : null;
-      const cloudDeposits = results[3].status === 'fulfilled' ? results[3].value : null;
-      const cloudWithdrawals = results[4].status === 'fulfilled' ? results[4].value : null;
-      const cloudAudit = results[5].status === 'fulfilled' ? results[5].value : null;
-
-      if (cloudUsers && cloudUsers.length > 0) {
-        setUsers((prev) => {
-          const cloudMap = new Map(cloudUsers.map((u) => [u.id, u]));
-          // Keep existing if not in cloud, but cloud takes precedence for balances/status
-          const merged = [...cloudUsers];
-          prev.forEach((u) => {
-            if (!cloudMap.has(u.id)) {
-              merged.push(u);
-            }
-          });
-          return merged;
-        });
-      }
-      if (cloudTrades) {
-        setTrades((prev) => {
-          const cloudMap = new Map(cloudTrades.map((t) => [t.id, t]));
-          const merged = [...cloudTrades];
-          // Preserve local trades until their cloud write is confirmed, including completed history.
-          prev.forEach((localTrade) => {
-            if (!cloudMap.has(localTrade.id)) merged.push(localTrade);
-          });
-          return merged.sort(
-            (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
-          );
-        });
-      }
-      if (cloudTickets && cloudTickets.length > 0) {
-        setSupportTickets((prev) => mergeIncomingTickets(prev, cloudTickets));
-      }
-      if (cloudDeposits && cloudDeposits.length > 0) {
-        setDepositRequests(cloudDeposits);
-      }
-      if (cloudWithdrawals && cloudWithdrawals.length > 0) {
-        setWithdrawalRequests(cloudWithdrawals);
-      }
-      if (cloudAudit) {
-        setAuditLogs((prev) => {
-          const merged = new Map(cloudAudit.map((log) => [log.id, log]));
-          prev.forEach((log) => {
-            if (!merged.has(log.id)) merged.set(log.id, log);
-          });
-          return Array.from(merged.values()).sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          );
-        });
-      }
-      const coreDataLoaded =
-        results[0].status === 'fulfilled' && cloudUsers !== null &&
-        results[1].status === 'fulfilled' && cloudTrades !== null;
-      setIsSupabaseSynced(coreDataLoaded);
-      if (!coreDataLoaded) {
-        console.warn('[Supabase Cloud Hydration] Account or trade data could not be confirmed from the shared database.');
-      }
-    } catch (err) {
-      setIsSupabaseSynced(false);
-      console.warn('[Supabase Cloud Hydration] notice:', err);
-    }
+  // Firebase is the single cloud source for account, trade, support and request data.
+  const mergeCloudItems = <T extends { id: string }>(previous: T[], incoming: T[]): T[] => {
+    const merged = new Map(previous.map((item) => [item.id, item]));
+    incoming.forEach((item) => {
+      merged.set(item.id, { ...merged.get(item.id), ...item } as T);
+    });
+    return Array.from(merged.values());
   };
 
-  const refreshAllFromSupabase = async () => {
-    // Manual Admin Sync Now must also refresh the Support Inbox, not just core tables.
-    await hydrateFromSupabase(true);
+  const normalizeFirebaseUser = (value: any): User => ({
+    ...value,
+    id: String(value?.id || ''),
+    uid: String(value?.uid || ''),
+    name: String(value?.name || 'Unknown Customer'),
+    email: String(value?.email || ''),
+    phone: value?.phone ? String(value.phone) : undefined,
+    tradingBalance: Number(value?.tradingBalance || 0),
+    fundingBalance: Number(value?.fundingBalance || 0),
+    status: value?.status === 'suspended' || value?.status === 'archived' ? value.status : 'active',
+    isOnline: Boolean(value?.isOnline),
+    createdAt: String(value?.createdAt || ''),
+    lastLogin: String(value?.lastLogin || ''),
+  });
+
+  const normalizeSupportTicket = (value: any): SupportTicket => ({
+    ...value,
+    id: String(value?.id || ''),
+    userId: String(value?.userId || ''),
+    userName: String(value?.userName || 'Unknown Customer'),
+    userEmail: String(value?.userEmail || ''),
+    status: value?.status === 'closed' || value?.status === 'answered' ? value.status : 'pending',
+    lastMessage: String(value?.lastMessage || ''),
+    lastMessageTime: String(value?.lastMessageTime || new Date().toISOString()),
+    unreadAdminCount: Number(value?.unreadAdminCount || 0),
+    unreadUserCount: Number(value?.unreadUserCount || 0),
+    messages: Array.isArray(value?.messages)
+      ? value.messages
+          .filter((message: any) => message && typeof message === 'object')
+          .map((message: any, index: number) => ({
+            ...message,
+            id: String(message.id || `message-${index}`),
+            sender: message.sender === 'admin' ? 'admin' : 'user',
+            senderName: String(message.senderName || (message.sender === 'admin' ? 'Admin Team' : value?.userName || 'Customer')),
+            text: String(message.text || ''),
+            timestamp: String(message.timestamp || value?.lastMessageTime || new Date().toISOString()),
+            read: Boolean(message.read),
+          }))
+      : [],
+  });
+
+  const refreshAllFromFirebase = async () => {
+    if (!isFirebaseConfigured()) {
+      setIsFirebaseSynced(false);
+      return;
+    }
+    const results = await Promise.allSettled([
+      fetchFirebaseCollection<User>('users'),
+      fetchFirebaseCollection<Trade>('trades'),
+      fetchFirebaseCollection<DepositRequest>('deposits'),
+      fetchFirebaseCollection<WithdrawalRequest>('withdrawals'),
+      fetchFirebaseCollection<AuditLog>('auditLogs'),
+      fetchFirebaseCollection<BalanceAdjustment>('balanceAdjustments'),
+      fetchFirebaseCollection<SupportTicket>('supportTickets'),
+      fetchFirebaseCollection<MarketCoin>('marketCoins'),
+      fetchFirebaseCollection<{ marketDataMode?: 'live_stream' | 'manual_benchmark' }>('marketSettings'),
+      fetchFirebaseCollection<SystemSettings>('systemSettings'),
+    ]);
+
+    if (results[0].status === 'fulfilled') setUsers((prev) => mergeCloudItems(prev, results[0].value.map(normalizeFirebaseUser)));
+    if (results[1].status === 'fulfilled') setTrades((prev) => mergeCloudItems(prev, results[1].value));
+    if (results[2].status === 'fulfilled') setDepositRequests((prev) => mergeCloudItems(prev, results[2].value));
+    if (results[3].status === 'fulfilled') setWithdrawalRequests((prev) => mergeCloudItems(prev, results[3].value));
+    if (results[4].status === 'fulfilled') {
+      setAuditLogs((prev) => mergeCloudItems(prev, results[4].value).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ));
+    }
+    if (results[5].status === 'fulfilled') {
+      setBalanceAdjustments((prev) => mergeCloudItems(prev, results[5].value).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ));
+    }
+    if (results[6].status === 'fulfilled') {
+      setSupportTickets(results[6].value.map(normalizeSupportTicket).sort(
+        (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+      ));
+    }
+    if (results[7].status === 'fulfilled' && results[7].value.length > 0) {
+      setCoins((prev) => {
+        const map = new Map(prev.map((coin) => [coin.symbol, coin]));
+        results[7].value.forEach((coin) => map.set(coin.symbol, { ...map.get(coin.symbol), ...coin }));
+        return Array.from(map.values());
+      });
+    }
+    if (results[8].status === 'fulfilled' && results[8].value[0]?.marketDataMode) {
+      setMarketDataModeState(results[8].value[0].marketDataMode);
+    }
+    if (results[9].status === 'fulfilled' && results[9].value[0]) {
+      setSystemSettings((prev) => ({ ...prev, ...results[9].value[0] }));
+    }
+
+    const coreDataLoaded = results[0].status === 'fulfilled' && results[1].status === 'fulfilled';
+    setIsFirebaseSynced(coreDataLoaded);
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error('[Firebase Cloud Sync] Collection load failed:', ['users', 'trades', 'deposits', 'withdrawals', 'auditLogs', 'balanceAdjustments', 'supportTickets', 'marketCoins', 'marketSettings', 'systemSettings'][index], result.reason);
+      }
+    });
   };
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isFirebaseConfigured()) {
+      setIsFirebaseSynced(false);
+      return;
+    }
 
     let isMounted = true;
-    hydrateFromSupabase();
+    let usersReady = false;
+    let tradesReady = false;
+    const onError = (collectionName: string) => (error: Error) => {
+      console.error(`[Firebase ${collectionName}] Realtime listener failed:`, error);
+      if (collectionName === 'users' || collectionName === 'trades') setIsFirebaseSynced(false);
+    };
 
-    // Subscribe to Postgres Realtime changes
-    const channel = subscribeToSupabaseRealtime({
-      onUserUpdate: async () => {
-        const u = await fetchUsersFromSupabase();
-        if (u && isMounted) setUsers(u);
-      },
-      onTradeUpdate: async (payload) => {
-        // A live P/L update affects one trade. Fetch only that row instead of
-        // re-downloading the customer's complete trade history on every event.
-        const tradeId = payload?.new?.id || payload?.old?.id;
-        if (!tradeId || !isMounted) return;
-        if (payload?.eventType === 'DELETE') {
-          setTrades((prev) => prev.filter((trade) => trade.id !== tradeId));
-          return;
-        }
-        const cloudTrade = await fetchTradeFromSupabase(tradeId);
-        if (!cloudTrade || !isMounted) return;
-        setTrades((prev) => {
-          const exists = prev.some((trade) => trade.id === cloudTrade.id);
-          const merged = exists
-            ? prev.map((trade) => trade.id === cloudTrade.id ? cloudTrade : trade)
-            : [cloudTrade, ...prev];
-          return merged.sort(
-            (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
-          );
+    const unsubscribers = [
+      subscribeFirebaseCollection<User>('users', (items) => {
+        if (!isMounted) return;
+        usersReady = true;
+        setUsers((prev) => mergeCloudItems(prev, items.map(normalizeFirebaseUser)));
+        setIsFirebaseSynced(usersReady && tradesReady);
+      }, onError('users')),
+      subscribeFirebaseCollection<Trade>('trades', (items) => {
+        if (!isMounted) return;
+        tradesReady = true;
+        setTrades((prev) => mergeCloudItems(prev, items).sort(
+          (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+        ));
+        setIsFirebaseSynced(usersReady && tradesReady);
+      }, onError('trades')),
+      subscribeFirebaseCollection<DepositRequest>('deposits', (items) => {
+        if (isMounted) setDepositRequests((prev) => mergeCloudItems(prev, items));
+      }, onError('deposits')),
+      subscribeFirebaseCollection<WithdrawalRequest>('withdrawals', (items) => {
+        if (isMounted) setWithdrawalRequests((prev) => mergeCloudItems(prev, items));
+      }, onError('withdrawals')),
+      subscribeFirebaseCollection<AuditLog>('auditLogs', (items) => {
+        if (isMounted) setAuditLogs((prev) => mergeCloudItems(prev, items).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        ));
+      }, onError('auditLogs')),
+      subscribeFirebaseCollection<BalanceAdjustment>('balanceAdjustments', (items) => {
+        if (isMounted) setBalanceAdjustments((prev) => mergeCloudItems(prev, items).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        ));
+      }, onError('balanceAdjustments')),
+      subscribeFirebaseCollection<SupportTicket>('supportTickets', (items) => {
+        if (!isMounted) return;
+        setSupportTickets(items.map(normalizeSupportTicket).sort(
+          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+        ));
+      }, onError('supportTickets')),
+      subscribeFirebaseCollection<MarketCoin>('marketCoins', (items) => {
+        if (!isMounted || items.length === 0) return;
+        setCoins((prev) => {
+          const map = new Map(prev.map((coin) => [coin.symbol, coin]));
+          items.forEach((coin) => map.set(coin.symbol, { ...map.get(coin.symbol), ...coin }));
+          return Array.from(map.values());
         });
-      },
-      onTicketUpdate: async (payload) => {
-        // Support messages update one ticket row; don't reload every chat history.
-        const ticketId = payload?.new?.id || payload?.old?.id;
-        if (!ticketId || !isMounted) return;
-        if (payload?.eventType === 'DELETE') {
-          setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
-          return;
-        }
-        const cloudTicket = await fetchSupportTicketFromSupabase(ticketId);
-        if (cloudTicket && isMounted) {
-          setSupportTickets((prev) => {
-            const existing = prev.find((ticket) => ticket.id === cloudTicket.id);
-            const mergedTicket = mergeIncomingTickets(existing ? [existing] : [], [cloudTicket])[0];
-            const next = existing
-              ? prev.map((ticket) => ticket.id === cloudTicket.id ? mergedTicket : ticket)
-              : [mergedTicket, ...prev];
-            return next.sort(
-              (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-            );
-          });
-        }
-      },
-      onDepositUpdate: async () => {
-        const d = await fetchDepositsFromSupabase();
-        if (d && isMounted) setDepositRequests(d);
-      },
-      onWithdrawalUpdate: async () => {
-        const w = await fetchWithdrawalsFromSupabase();
-        if (w && isMounted) setWithdrawalRequests(w);
-      },
-      onAuditLogUpdate: async () => {
-        const cloudLogs = await fetchAuditLogsFromSupabase();
-        if (cloudLogs && isMounted) {
-          setAuditLogs((prev) => {
-            const merged = new Map(cloudLogs.map((log) => [log.id, log]));
-            prev.forEach((log) => {
-              if (!merged.has(log.id)) merged.set(log.id, log);
-            });
-            return Array.from(merged.values()).sort(
-              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-          });
-        }
-      },
-    });
+      }, onError('marketCoins')),
+      subscribeFirebaseCollection<{ marketDataMode?: 'live_stream' | 'manual_benchmark' }>('marketSettings', (items) => {
+        if (isMounted && items[0]?.marketDataMode) setMarketDataModeState(items[0].marketDataMode);
+      }, onError('marketSettings')),
+      subscribeFirebaseCollection<SystemSettings>('systemSettings', (items) => {
+        if (isMounted && items[0]) setSystemSettings((prev) => ({ ...prev, ...items[0] }));
+      }, onError('systemSettings')),
+    ];
 
-    // Realtime handles changes immediately. Poll less often as a fallback to
-    // avoid repeatedly transferring the same account and full support history.
-    const pollTimer = setInterval(() => {
-      if (isMounted) hydrateFromSupabase(false);
-    }, 60000);
-    const ticketPollTimer = setInterval(async () => {
-      if (!isMounted) return;
-      const tickets = await fetchTicketsFromSupabase();
-      if (tickets && isMounted) {
-        setSupportTickets((prev) => mergeIncomingTickets(prev, tickets));
-      }
-    }, 180000);
-
+    void refreshAllFromFirebase();
     return () => {
       isMounted = false;
-      clearInterval(pollTimer);
-      clearInterval(ticketPollTimer);
-      if (channel) {
-        channel.unsubscribe();
-      }
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, []);
 
@@ -913,7 +922,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const openedTime = t.openedAt ? new Date(t.openedAt).getTime() : 0;
           const isFreshTrade = openedTime > 0 && (nowMs - openedTime < 10000);
 
-          const isExpired = !isFreshTrade && expiryMs > 0 && !isNaN(expiryMs) && nowMs >= expiryMs;
+          const isExpired = !isFreshTrade && typeof expiryMs === 'number' && expiryMs > 0 && !Number.isNaN(expiryMs) && nowMs >= expiryMs;
 
           const targetCoin = coins.find((c) => c.symbol === t.symbol);
           const curPrice = targetCoin ? targetCoin.price : t.currentPrice;
@@ -965,8 +974,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               status: 'CLOSED' as const,
               closedAt: now.toISOString().replace('T', ' ').slice(0, 19),
             };
-            if (isSupabaseConfigured()) {
-              syncTradeToSupabase(closedTradeItem).catch((e) => console.warn('Trade auto-close sync notice:', e));
+            if (isFirebaseConfigured()) {
+              void saveFirebaseDocument('trades', closedTradeItem.id, closedTradeItem)
+                .catch((e) => console.warn('[Firebase Trade] Auto-close sync notice:', e));
             }
             return closedTradeItem;
           }
@@ -976,16 +986,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Persist the live market snapshot every 10 seconds. Realtime sends the
           // changed trade row to other devices without reloading the full trade table.
           const lastSyncedAt = lastTradeCloudSyncRef.current[t.id] || 0;
-          if (isSupabaseConfigured() && nowMs - lastSyncedAt >= 10000) {
+          if (isFirebaseConfigured() && nowMs - lastSyncedAt >= 10000) {
             lastTradeCloudSyncRef.current[t.id] = nowMs;
-            syncTradeToSupabase({
+            void saveFirebaseDocument('trades', t.id, {
               ...t,
               currentPrice: curPrice,
               pnl: livePnl,
               pnlPercent: livePnlPercent,
-            }).then((result) => {
-              if (!result.success) console.warn('[Trade live sync] Snapshot not saved:', result.error, t.id);
-            }).catch((error) => console.warn('[Trade live sync] Snapshot error:', error, t.id));
+            }).catch((error) => console.warn('[Firebase Trade] Live snapshot not saved:', error, t.id));
           }
 
           return {
@@ -1005,10 +1013,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   const totalReturn = userPayouts.reduce((sum, p) => sum + p.returnAmount, 0);
                   const updatedTradingBalance = Number((u.tradingBalance + totalReturn).toFixed(2));
 
-                  // Persist expiry settlement to Supabase as well as local state.
                   // Margin was deducted when the trade opened; return margin + PnL here.
-                  if (isSupabaseConfigured()) {
-                    updateUserBalanceInSupabase(u.id, updatedTradingBalance, u.fundingBalance);
+                  if (isFirebaseConfigured()) {
+                    void saveFirebaseDocument('users', u.id, { tradingBalance: updatedTradingBalance })
+                      .catch((error) => console.warn('[Firebase Balance] Trade expiry balance sync failed:', error));
                   }
 
                   return {
@@ -1050,8 +1058,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     password?: string;
     referralCode?: string;
   }) => {
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'The shared customer database is unavailable. Your account was not created. Please contact Support.' };
+    if (import.meta.env.PROD && !isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Authentication is unavailable. Your account was not created. Please try again later.' };
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -1091,7 +1099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const exists = users.some(
-      (u) => u.email.toLowerCase() === cleanEmail || u.name.toLowerCase() === cleanName.toLowerCase()
+      (u) => String(u.email || '').toLowerCase() === cleanEmail || String(u.name || '').toLowerCase() === cleanName.toLowerCase()
     );
     if (exists) {
       return { success: false, message: 'This username or email is already registered. Please sign in.' };
@@ -1105,37 +1113,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let authenticatedUserId = `user-${uid}`;
 
-    // If Supabase Cloud is configured, sync with Supabase Auth
-    if (isSupabaseConfigured()) {
-      try {
-        const { data: authData, error: authError } = await supabaseAuthSignUp({
-          email: cleanEmail,
-          password: password || '123456',
-          name: cleanName,
-          phone: phone || '',
-          uid,
-        });
-
-        if (authError) {
-          if (authError.message?.toLowerCase().includes('already registered')) {
-            return {
-              success: false,
-              message: 'This email is already registered. Please sign in with your password.',
-            };
-          }
-          console.error('[Supabase Auth SignUp failed]', authError.message);
-          return { success: false, message: `Account creation failed: ${authError.message}` };
-        }
-        if (authData?.user?.id) {
-          authenticatedUserId = authData.user.id;
-        } else {
-          return { success: false, message: 'Supabase did not confirm the new account. Please try again.' };
-        }
-      } catch (authErr) {
-        console.warn('[Supabase Auth SignUp notice]', authErr);
-      }
-    }
-
+    // Firebase is the primary authentication provider. Do not block registration on unrelated legacy service status.
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     const newUser: User = {
@@ -1156,17 +1134,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastLogin: nowStr,
     };
 
-    // Save the customer profile first. Never create a local-only account in production.
-    if (isSupabaseConfigured()) {
-      const profileSave = await syncUserToSupabase(newUser);
-      if (!profileSave.success) {
-        console.error('[Supabase Profile Sync failed]', profileSave.error);
-        return {
-          success: false,
-          message: `Account authentication was created, but its customer profile could not be saved to the shared database. Do not register again; contact Admin. ${profileSave.error || ''}`.trim(),
-        };
-      }
+    // Save new customer authentication and profile to Firebase.
+    try {
+      const firebaseUser = await registerWithFirebase(
+        cleanEmail,
+        password || '123456',
+        cleanName
+      );
+      const { password: _password, ...firebaseProfile } = newUser;
+      await saveFirebaseDocument('users', newUser.id, {
+        ...firebaseProfile,
+        authUid: firebaseUser.uid,
+        authProvider: 'firebase',
+      });
+    } catch (firebaseError) {
+      console.error('[Firebase Registration failed]', firebaseError);
+      return {
+        success: false,
+        message: 'Firebase account creation failed. Please contact Support before trying again.',
+      };
     }
+
+    // Firebase profile is the source of truth for newly registered accounts.
 
     // Update in-memory state
     setUsers((prev) => [newUser, ...prev.filter((u) => u.id !== newUser.id)]);
@@ -1193,9 +1182,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
       ],
     };
-    let welcomeTicketSaved = !isSupabaseConfigured();
-    if (isSupabaseConfigured()) {
-      const ticketSave = await syncTicketToSupabase(welcomeTicket);
+    let welcomeTicketSaved = isFirebaseConfigured();
+    {
+      const ticketSave = await persistSupportTicket(welcomeTicket);
       welcomeTicketSaved = ticketSave.success;
       if (!ticketSave.success) {
         console.error('[Registration welcome ticket sync failed]', ticketSave.error);
@@ -1222,39 +1211,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginUser = async (identifier: string, password?: string) => {
     const clean = identifier.trim().toLowerCase();
+    let firebaseFound: User | undefined;
 
-    // Refresh from Supabase if configured so latest registered users from all devices are loaded
-    if (isSupabaseConfigured()) {
+    // Firebase user profiles keep login working independently of the previous database.
+    if (isFirebaseConfigured()) {
       try {
-        const cloudUsers = await fetchUsersFromSupabase();
-        if (cloudUsers && cloudUsers.length > 0) {
-          setUsers(cloudUsers);
+        const firebaseUsers = await fetchFirebaseCollection<User>('users');
+        if (firebaseUsers.length > 0) {
+          setUsers((prev) => {
+            const merged = new Map(prev.map((user) => [user.id, user]));
+            firebaseUsers.forEach((user) => merged.set(user.id, { ...merged.get(user.id), ...user } as User));
+            return Array.from(merged.values());
+          });
+          const match = firebaseUsers.find((u) => String(u.name || '').toLowerCase() === clean || String(u.email || '').toLowerCase() === clean || String(u.uid || '') === clean);
+          if (match) {
+            firebaseFound = match;
+            setUsers((prev) => [match, ...prev.filter((u) => u.id !== match.id)]);
+          }
         }
       } catch (err) {
-        console.warn('Fetch users for login error:', err);
+        console.warn('[Firebase users lookup]', err);
       }
     }
 
-    let found = users.find(
+    let found = firebaseFound || users.find(
       (u) =>
-        u.name.toLowerCase() === clean ||
-        u.email.toLowerCase() === clean ||
-        u.uid === clean
+        String(u.name || '').toLowerCase() === clean ||
+        String(u.email || '').toLowerCase() === clean ||
+        String(u.uid || '') === clean
     );
-
-    // If still not found, try one direct cloud fetch
-    if (!found && isSupabaseConfigured()) {
-      const cloudUsers = await fetchUsersFromSupabase();
-      if (cloudUsers) {
-        setUsers(cloudUsers);
-        found = cloudUsers.find(
-          (u) =>
-            u.name.toLowerCase() === clean ||
-            u.email.toLowerCase() === clean ||
-            u.uid === clean
-        );
-      }
-    }
 
     if (!found) {
       return {
@@ -1270,19 +1255,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'This account has been archived. Please contact Support for assistance.' };
     }
 
-    // Verify password:
+    // Verify Firebase login or migrate a verified legacy account.
     if (password) {
-      if (isSupabaseConfigured() && found.email) {
-        try {
-          await supabaseAuthSignIn(found.email, password);
-        } catch {
-          // fallback to stored password check
-        }
+      if (!found.email) {
+        return { success: false, message: 'This account has no registered email address.' };
       }
 
-      const validPass = found.password || '123456';
-      if (password !== validPass) {
-        return { success: false, message: 'Incorrect password. Please verify and try again.' };
+      // Authentication is Firebase-only. For a legacy profile not yet migrated,
+      // verify its locally stored legacy password before creating its Firebase Auth account.
+      // Authentication is performed only by Firebase Auth.
+      const legacyAuthVerified = Boolean(found.password && password === found.password);
+
+      try {
+        const firebaseResult = await loginOrMigrateWithFirebase(
+          found.email,
+          password,
+          legacyAuthVerified,
+          found.name
+        );
+
+        const { password: _password, ...firebaseProfile } = found;
+        await saveFirebaseDocument('users', found.id, {
+          ...firebaseProfile,
+          authUid: firebaseResult.user.uid,
+          authProvider: 'firebase',
+        });
+      } catch (firebaseError) {
+        console.error('[Firebase Login/Migration failed]', firebaseError);
+        return {
+          success: false,
+          message: 'Login or account migration failed. Your existing account has not been deleted. Please contact Support.',
+        };
       }
     }
 
@@ -1301,6 +1304,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logoutUser = () => {
+    void logoutFromFirebase().catch((error) => {
+      console.warn('[Firebase Auth] Sign-out notice:', error);
+    });
     setIsUserLoggedIn(false);
     setActiveTab('login');
     if (typeof window !== 'undefined') {
@@ -1319,7 +1325,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = prev.map((u) => (u.id === currentUserId ? { ...u, avatar: avatarUrl } : u));
       const target = updated.find((u) => u.id === currentUserId);
       if (target) {
-        syncUserToSupabase(target);
+        const { password: _password, ...safeProfile } = target;
+        void saveFirebaseDocument('users', target.id, safeProfile)
+          .catch((error) => console.warn('[Firebase User] Avatar sync failed:', error));
       }
       return updated;
     });
@@ -1329,46 +1337,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!newPass || newPass.trim().length < 6) {
       return { success: false, message: 'New password must be at least 6 characters long.' };
     }
-
-    const actualCurrentPass = currentUser.password || '123456';
-    if (currentPass.trim() !== actualCurrentPass) {
-      return { success: false, message: 'Current password is incorrect. Please re-enter your current password.' };
-    }
-
-    const updatedUser: User = {
-      ...currentUser,
-      password: newPass.trim(),
-    };
-
-    setUsers((prev) => {
-      const updatedList = prev.map((u) => (u.id === currentUser.id ? updatedUser : u));
-      saveState('users', updatedList);
-      return updatedList;
-    });
-
     try {
-      await syncUserToSupabase(updatedUser);
-      if (isSupabaseConfigured() && currentUser.email) {
-        const { getSupabaseClient } = await import('../lib/supabase');
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          await supabase.auth.updateUser({ password: newPass.trim() });
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase password sync notice:', err);
+      await updateFirebasePassword(currentPass.trim(), newPass.trim());
+      logAuditAction(
+        'USER_PASSWORD_CHANGED',
+        `${currentUser.name} (${currentUser.uid})`,
+        'Account login password updated successfully through Firebase Authentication.'
+      );
+      return { success: true, message: 'Password updated successfully! Please use your new password for all future logins.' };
+    } catch (error) {
+      console.warn('[Firebase Auth] Password update failed:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Password could not be updated. Please sign in again and retry.',
+      };
     }
-
-    logAuditAction(
-      'USER_PASSWORD_CHANGED',
-      `${currentUser.name} (${currentUser.uid})`,
-      'Account login password updated successfully by user.'
-    );
-
-    return {
-      success: true,
-      message: 'Password updated successfully! Please use your new password for all future logins.',
-    };
   };
 
   const updateUserStatus = (userId: string, status: 'active' | 'suspended' | 'archived', reason?: string) => {
@@ -1380,7 +1363,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, status } : user));
-    void updateUserStatusInSupabase(userId, status);
+    void saveFirebaseDocument('users', userId, { status })
+      .catch((error) => console.warn('[Firebase User] Status sync failed:', error));
     const action = status === 'archived'
       ? 'USER_ARCHIVED'
       : status === 'suspended'
@@ -1393,86 +1377,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCoinSettings = (symbol: string, updates: Partial<MarketCoin>) => {
-    setCoins((prev) =>
-      prev.map((coin) => {
-        if (coin.symbol === symbol) {
-          const updated = { ...coin, ...updates };
-          if (updates.priceOffset !== undefined || updates.price !== undefined) {
-            updated.price = Number((updated.basePrice + (updated.priceOffset || 0)).toFixed(updated.basePrice > 100 ? 2 : 4));
-          }
-          return updated;
-        }
-        return coin;
-      })
-    );
-    logAuditAction(
-      'MARKET_CONFIG_UPDATE',
-      symbol,
-      `Market coin parameters calibrated (Offset: ${updates.priceOffset ?? 0}, Spread: ${updates.spread ?? 'N/A'})`
-    );
+    const existing = coins.find((coin) => coin.symbol === symbol);
+    if (!existing) return;
+    const updated = { ...existing, ...updates };
+    if (updates.priceOffset !== undefined || updates.price !== undefined) {
+      updated.price = Number((updated.basePrice + (updated.priceOffset || 0)).toFixed(updated.basePrice > 100 ? 2 : 4));
+    }
+    setCoins((prev) => prev.map((coin) => coin.symbol === symbol ? updated : coin));
+    void saveFirebaseDocument('marketCoins', symbol, updated)
+      .catch((error) => console.warn('[Firebase Market] Coin settings sync failed:', error));
+    logAuditAction('MARKET_CONFIG_UPDATE', symbol, `Market coin parameters calibrated (Offset: ${updates.priceOffset ?? 0}, Spread: ${updates.spread ?? 'N/A'})`);
   };
 
   const setCoinPrice = (symbol: string, newPrice: number) => {
     if (newPrice <= 0) return;
-    setCoins((prev) =>
-      prev.map((c) => {
-        if (c.symbol === symbol) {
-          const formatted = Number(newPrice.toFixed(newPrice > 100 ? 2 : 4));
-          const change = ((formatted - c.basePrice) / c.basePrice) * 100;
-          return {
-            ...c,
-            price: formatted,
-            basePrice: formatted,
-            priceOffset: 0,
-            change24h: Number(change.toFixed(2)),
-            high24h: Math.max(c.high24h, formatted),
-            low24h: Math.min(c.low24h, formatted),
-          };
-        }
-        return c;
-      })
-    );
-    logAuditAction(
-      'BENCHMARK_PRICE_CALIBRATION',
-      symbol,
-      `Market benchmark price calibrated to $${newPrice.toLocaleString()}`
-    );
+    const existing = coins.find((coin) => coin.symbol === symbol);
+    if (!existing) return;
+    const formatted = Number(newPrice.toFixed(newPrice > 100 ? 2 : 4));
+    const change = ((formatted - existing.basePrice) / existing.basePrice) * 100;
+    const updated: MarketCoin = {
+      ...existing,
+      price: formatted,
+      basePrice: formatted,
+      priceOffset: 0,
+      change24h: Number(change.toFixed(2)),
+      high24h: Math.max(existing.high24h, formatted),
+      low24h: Math.min(existing.low24h, formatted),
+    };
+    setCoins((prev) => prev.map((coin) => coin.symbol === symbol ? updated : coin));
+    void saveFirebaseDocument('marketCoins', symbol, updated)
+      .catch((error) => console.warn('[Firebase Market] Benchmark price sync failed:', error));
+    logAuditAction('BENCHMARK_PRICE_CALIBRATION', symbol, `Market benchmark price calibrated to $${newPrice.toLocaleString()}`);
   };
 
   const applyMarketShock = (symbol: string, percentage: number) => {
-    setCoins((prev) =>
-      prev.map((c) => {
-        if (c.symbol === symbol) {
-          const multiplier = 1 + percentage / 100;
-          const newPrice = Number((c.price * multiplier).toFixed(c.price > 100 ? 2 : 4));
-          const newChange = Number((c.change24h + percentage).toFixed(2));
-          return {
-            ...c,
-            price: newPrice,
-            basePrice: newPrice,
-            priceOffset: 0,
-            change24h: newChange,
-            high24h: Math.max(c.high24h, newPrice),
-            low24h: Math.min(c.low24h, newPrice),
-          };
-        }
-        return c;
-      })
-    );
-    logAuditAction(
-      'MARKET_STRESS_TEST',
-      symbol,
-      `Simulated market shock applied: ${percentage >= 0 ? '+' : ''}${percentage}%`
-    );
+    const existing = coins.find((coin) => coin.symbol === symbol);
+    if (!existing) return;
+    const multiplier = 1 + percentage / 100;
+    const newPrice = Number((existing.price * multiplier).toFixed(existing.price > 100 ? 2 : 4));
+    const updated: MarketCoin = {
+      ...existing,
+      price: newPrice,
+      basePrice: newPrice,
+      priceOffset: 0,
+      change24h: Number((existing.change24h + percentage).toFixed(2)),
+      high24h: Math.max(existing.high24h, newPrice),
+      low24h: Math.min(existing.low24h, newPrice),
+    };
+    setCoins((prev) => prev.map((coin) => coin.symbol === symbol ? updated : coin));
+    void saveFirebaseDocument('marketCoins', symbol, updated)
+      .catch((error) => console.warn('[Firebase Market] Market shock sync failed:', error));
+    logAuditAction('MARKET_STRESS_TEST', symbol, `Simulated market shock applied: ${percentage >= 0 ? '+' : ''}${percentage}%`);
   };
 
   const addCustomCoin = (newCoin: MarketCoin) => {
-    setCoins((prev) => [...prev, newCoin]);
-    logAuditAction(
-      'CUSTOM_COIN_ADDED',
-      newCoin.symbol,
-      `New custom sandbox coin listed: ${newCoin.name} at initial price $${newCoin.price}`
-    );
+    setCoins((prev) => [...prev.filter((coin) => coin.symbol !== newCoin.symbol), newCoin]);
+    void saveFirebaseDocument('marketCoins', newCoin.symbol, newCoin)
+      .catch((error) => console.warn('[Firebase Market] New coin sync failed:', error));
+    logAuditAction('CUSTOM_COIN_ADDED', newCoin.symbol, `New custom sandbox coin listed: ${newCoin.name} at initial price $${newCoin.price}`);
   };
 
   const openTrade = async ({
@@ -1506,8 +1468,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetCoin = coins.find((c) => c.symbol === symbol);
     if (!targetCoin) return { success: false, message: 'Invalid symbol.' };
 
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Secure cloud connection is unavailable. Your trade was not opened. Please contact Support.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase cloud connection is unavailable. Your trade was not opened. Please contact Support.' };
     }
 
     const nextTradingBalance = Number((currentUser.tradingBalance - totalDeduction).toFixed(2));
@@ -1539,18 +1501,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fee,
     };
 
-    // Require the shared database to confirm both writes before showing success locally.
-    if (isSupabaseConfigured()) {
-      const balanceSave = await updateUserBalanceInSupabase(currentUser.id, nextTradingBalance, currentUser.fundingBalance);
-      if (!balanceSave.success) {
-        return { success: false, message: `Trade not opened: Trading Balance could not be saved to the cloud. ${balanceSave.error || ''}`.trim() };
+    // Firebase is the source of truth for opening trades. Do not report success
+    // or change local balances unless both cloud writes complete.
+    try {
+      await saveFirebaseDocument('trades', newTrade.id, newTrade);
+      await saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: nextTradingBalance,
+        fundingBalance: currentUser.fundingBalance,
+      });
+    } catch (firebaseError) {
+      try {
+        await deleteFirebaseDocument('trades', newTrade.id);
+      } catch (rollbackError) {
+        console.error('[Firebase Trade] Could not remove incomplete trade:', rollbackError);
       }
-      const tradeSave = await syncTradeToSupabase(newTrade);
-      if (!tradeSave.success) {
-        const rollback = await updateUserBalanceInSupabase(currentUser.id, currentUser.tradingBalance, currentUser.fundingBalance);
-        console.error('[Trade] Cloud trade save failed; balance rollback:', rollback.success, tradeSave.error);
-        return { success: false, message: `Trade not opened because cloud saving failed. ${tradeSave.error || ''}`.trim() };
-      }
+      console.error('[Firebase Trade] Save failed:', firebaseError);
+      return {
+        success: false,
+        message: 'Trade not opened because Firebase could not save the trade and balance. No local balance was deducted. Please try again or contact Support.',
+      };
     }
 
     setUsers((prev) => prev.map((u) => u.id === currentUser.id ? { ...u, tradingBalance: nextTradingBalance } : u));
@@ -1605,10 +1574,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((t) => (t.id === tradeId ? closedTrade : t))
     );
 
-    if (isSupabaseConfigured()) {
-      syncTradeToSupabase(closedTrade).catch((err) => console.warn('Trade close sync notice:', err));
-      updateUserBalanceInSupabase(trade.userId, updatedBal, tradeOwner.fundingBalance);
-    }
+    void Promise.all([
+      saveFirebaseDocument('trades', closedTrade.id, closedTrade),
+      saveFirebaseDocument('users', trade.userId, { tradingBalance: updatedBal }),
+    ]).catch((error) => console.warn('[Firebase Trade] Close/settlement sync failed:', error));
   };
 
   const setTradeOutcome = (tradeId: string, outcome: 'WIN' | 'LOSS' | null, percent: number = 35) => {
@@ -1624,12 +1593,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     const target = trades.find((t) => t.id === tradeId);
-    if (target && isSupabaseConfigured()) {
-      syncTradeToSupabase({
+    if (target) {
+      void saveFirebaseDocument('trades', target.id, {
         ...target,
         scheduledOutcome: outcome,
         scheduledPercent: percent,
-      }).catch((e) => console.warn('Schedule outcome sync notice:', e));
+      }).catch((error) => console.warn('[Firebase Trade] Outcome schedule sync failed:', error));
     }
   };
 
@@ -1662,19 +1631,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const finalReturn = Math.max(0, Number((trade.margin + finalPnl).toFixed(2)));
 
-    // Credit target user's tradingBalance
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === trade.userId) {
-          const newTradingBal = Number((u.tradingBalance + finalReturn).toFixed(2));
-          if (isSupabaseConfigured()) {
-            updateUserBalanceInSupabase(u.id, newTradingBal, u.fundingBalance);
-          }
-          return { ...u, tradingBalance: newTradingBal };
-        }
-        return u;
-      })
-    );
+    // Credit the actual owner of this trade and persist the balance in Firebase.
+    const tradeOwner = users.find((user) => user.id === trade.userId);
+    if (!tradeOwner) {
+      console.error('[Trade settlement] Owner not found; refusing to credit the wrong account.', trade.userId);
+      return;
+    }
+    const newTradingBal = Number(((tradeOwner.tradingBalance || 0) + finalReturn).toFixed(2));
+    setUsers((prev) => prev.map((user) =>
+      user.id === trade.userId ? { ...user, tradingBalance: newTradingBal } : user
+    ));
+    void saveFirebaseDocument('users', trade.userId, { tradingBalance: newTradingBal })
+      .catch((error) => console.warn('[Firebase Balance] Admin settlement sync failed:', error));
 
     const closedTrade: Trade = {
       ...trade,
@@ -1690,9 +1658,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTrades((prev) => prev.map((t) => (t.id === tradeId ? closedTrade : t)));
 
-    if (isSupabaseConfigured()) {
-      syncTradeToSupabase(closedTrade).catch((err) => console.warn('Admin settle sync error:', err));
-    }
+    void saveFirebaseDocument('trades', closedTrade.id, closedTrade)
+      .catch((error) => console.warn('[Firebase Trade] Admin settlement sync failed:', error));
 
     logAuditAction(
       'ADMIN_SETTLE_TRADE',
@@ -1705,10 +1672,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const sendUserMessage = async (
     text: string,
     attachment?: { url: string; name: string; type: 'image' | 'file' }
-  ): Promise<{ success: boolean; message: string }> => {
+  ): Promise<{ success: boolean; message: string; ticketId?: string }> => {
     if (!text.trim() && !attachment) return { success: false, message: 'Enter a message or attach a file.' };
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Support cloud connection is unavailable. Your message was not sent.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Support connection is unavailable. Your message was not sent.' };
     }
 
     const nowStr = new Date().toISOString();
@@ -1752,12 +1719,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           messages: [newMsg],
         };
 
-    if (isSupabaseConfigured()) {
-      const save = await syncTicketToSupabase(updatedTicket);
-      if (!save.success) {
-        console.error('[Support] User message cloud save failed:', save.error);
-        return { success: false, message: `Message was not sent because cloud saving failed. ${save.error || ''}`.trim() };
-      }
+    const save = await persistSupportTicket(updatedTicket);
+if (!save.success) {
+      console.error('[Firebase Support] User message save failed:', save.error);
+      return { success: false, message: `Message was not sent because Firebase saving failed. ${save.error || ''}`.trim() };
     }
 
     const updatedList = activeTicket
@@ -1772,8 +1737,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const startNewSupportChat = async (userId?: string): Promise<{ success: boolean; message: string; ticketId?: string }> => {
     const targetId = userId || currentUser.id;
     const targetUser = users.find((u) => u.id === targetId) || currentUser;
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Support cloud connection is unavailable. A new chat was not opened.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Support connection is unavailable. A new chat was not opened.' };
     }
 
     const nowStr = new Date().toISOString();
@@ -1795,18 +1760,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const previouslyOpen = userTickets.filter((t) => !t.isSessionClosed && t.status !== 'closed');
-    if (isSupabaseConfigured()) {
-      const saves = await Promise.all([
+    const saves = await Promise.all([
         ...previouslyOpen.map((ticket) =>
-          syncTicketToSupabase({ ...ticket, status: 'closed', isSessionClosed: true })
+          persistSupportTicket({ ...ticket, status: 'closed', isSessionClosed: true })
         ),
-        syncTicketToSupabase(newTicket),
+        persistSupportTicket(newTicket),
       ]);
       const failed = saves.find((result) => !result.success);
-      if (failed) {
-        console.error('[Support] New session cloud save failed:', failed.error);
-        return { success: false, message: `A new chat could not be saved. ${failed.error || ''}`.trim() };
-      }
+if (failed) {
+      console.error('[Firebase Support] New session save failed:', failed.error);
+      return { success: false, message: `A new chat could not be saved. ${failed.error || ''}`.trim() };
     }
 
     setSupportTickets((prev) => {
@@ -1839,8 +1802,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     const targetTicket = supportTickets.find((t) => t.id === ticketId);
-    if (targetTicket && isSupabaseConfigured()) {
-      syncTicketToSupabase({ ...targetTicket, status: 'closed', isSessionClosed: true }).catch((e) => console.warn('Close ticket sync notice:', e));
+    if (targetTicket) {
+      void persistSupportTicket({ ...targetTicket, status: 'closed', isSessionClosed: true }).then((result) => {
+        if (!result.success) console.error('[Firebase Support] Close ticket save failed:', result.error);
+      });
     }
     logAuditAction(
       'SUPPORT_SESSION_CLOSED',
@@ -1860,8 +1825,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastMessageTime: nowStr,
     };
     setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
-    if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updated).then((result) => {
+    {
+      void persistSupportTicket(updated).then((result) => {
         if (!result.success) console.error('[Support] Reopened ticket was not saved:', result.error);
       });
     }
@@ -1870,9 +1835,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteSupportTicket = (ticketId: string) => {
     const targetTicket = supportTickets.find((ticket) => ticket.id === ticketId);
     setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
-    if (isSupabaseConfigured()) {
-      void deleteSupportTicketFromSupabase(ticketId).then((result) => {
-        if (!result.success) console.error('[Support] Ticket deletion was not saved:', result.error);
+    {
+      void deleteFirebaseDocument('supportTickets', ticketId).catch((error) => {
+        console.error('[Firebase Support] Ticket deletion failed:', error);
       });
     }
     logAuditAction(
@@ -1891,8 +1856,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           m.id === messageId ? { ...m, text: newText.trim(), isEdited: true } : m
         );
         const updatedTicket = { ...t, messages: updatedMsgs };
-        if (isSupabaseConfigured()) {
-          syncTicketToSupabase(updatedTicket).catch((e) => console.warn('Edit msg sync notice:', e));
+        {
+          persistSupportTicket(updatedTicket).catch((e) => console.warn('Edit msg sync notice:', e));
         }
         return updatedTicket;
       })
@@ -1915,8 +1880,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : m
         );
         const updatedTicket = { ...t, messages: updatedMsgs };
-        if (isSupabaseConfigured()) {
-          syncTicketToSupabase(updatedTicket).catch((e) => console.warn('Delete msg sync notice:', e));
+        {
+          persistSupportTicket(updatedTicket).catch((e) => console.warn('Delete msg sync notice:', e));
         }
         return updatedTicket;
       })
@@ -1929,8 +1894,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     attachment?: { url: string; name: string; type: 'image' | 'file' }
   ): Promise<{ success: boolean; message: string }> => {
     if (!text.trim() && !attachment) return { success: false, message: 'Enter a reply or attach a file.' };
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Support cloud connection is unavailable. The reply was not sent.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Support connection is unavailable. The reply was not sent.' };
     }
 
     const ticket = supportTickets.find((item) => item.id === ticketId);
@@ -1963,12 +1928,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       messages: [...(ticket.messages || []), newMsg],
     };
 
-    if (isSupabaseConfigured()) {
-      const save = await syncTicketToSupabase(updatedTicket);
-      if (!save.success) {
-        console.error('[Support] Admin reply cloud save failed:', save.error);
-        return { success: false, message: `Reply was not sent because cloud saving failed. ${save.error || ''}`.trim() };
-      }
+    const save = await persistSupportTicket(updatedTicket);
+if (!save.success) {
+      console.error('[Firebase Support] Admin reply save failed:', save.error);
+      return { success: false, message: `Reply was not sent because Firebase saving failed. ${save.error || ''}`.trim() };
     }
 
     setSupportTickets((prev) => prev.map((item) => item.id === ticket.id ? updatedTicket : item)
@@ -2016,8 +1979,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
     });
 
-    if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
+    {
+      void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Support] System notification was not saved:', result.error);
       });
     }
@@ -2038,8 +2001,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSessionClosed: status === 'closed',
     };
     setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
-    if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updated).then((result) => {
+    {
+      void persistSupportTicket(updated).then((result) => {
         if (!result.success) console.error('[Support] Ticket status was not saved:', result.error);
       });
     }
@@ -2054,9 +2017,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ticket.userId === currentUser.id ? { ...ticket, unreadUserCount: 0 } : ticket
       )
     );
-    if (isSupabaseConfigured()) {
+    {
       unreadTickets.forEach((ticket) => {
-        void syncTicketToSupabase({ ...ticket, unreadUserCount: 0 }).then((result) => {
+        void persistSupportTicket({ ...ticket, unreadUserCount: 0 }).then((result) => {
           if (!result.success) console.error('[Support] Read status was not saved:', result.error);
         });
       });
@@ -2128,8 +2091,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     });
 
-    if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
+    {
+      void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Support] Customer Support visit was not saved:', result.error);
       });
     }
@@ -2165,7 +2128,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const finalTrading = isFunding ? targetUser.tradingBalance : newBalance;
     const finalFunding = isFunding ? newBalance : targetUser.fundingBalance;
-    updateUserBalanceInSupabase(userId, finalTrading, finalFunding);
+    void saveFirebaseDocument('users', userId, {
+      tradingBalance: finalTrading,
+      fundingBalance: finalFunding,
+    }).catch((error) => console.warn('[Firebase Balance] Adjustment sync failed:', error));
 
     const adjustment: BalanceAdjustment = {
       id: `adj-${Date.now()}`,
@@ -2182,6 +2148,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setBalanceAdjustments((prev) => [adjustment, ...prev]);
+    void saveFirebaseDocument('balanceAdjustments', adjustment.id, adjustment)
+      .catch((error) => console.warn('[Firebase Balance] Adjustment history sync failed:', error));
 
     logAuditAction(
       'BALANCE_ADJUSTMENT',
@@ -2204,8 +2172,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     network?: string;
     note?: string;
   }): Promise<{ success: boolean; message: string }> => {
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Cloud connection is unavailable. The deposit request was not submitted.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase connection is unavailable. The deposit request was not submitted.' };
     }
     const newReq: DepositRequest = {
       id: `dep-${Date.now().toString().slice(-6)}`,
@@ -2219,12 +2187,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       note,
     };
-    if (isSupabaseConfigured()) {
-      const saved = await syncDepositToSupabase(newReq);
-      if (!saved.success) {
-        console.error('[Deposit] Cloud save failed:', saved.error);
-        return { success: false, message: `Deposit request was not submitted. ${saved.error || ''}`.trim() };
-      }
+    try {
+      await saveFirebaseDocument('deposits', newReq.id, newReq);
+    } catch (error) {
+      console.error('[Firebase Deposit] Cloud save failed:', error);
+      return { success: false, message: 'Deposit request was not submitted because Firebase could not save it. Please retry.' };
     }
     setDepositRequests((prev) => [newReq, ...prev]);
     return { success: true, message: 'Deposit request submitted and saved for Admin review.' };
@@ -2246,7 +2213,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : d
       )
     );
-    updateDepositStatusInSupabase(depositId, 'approved');
+    const approvedRequest = depositRequests.find((request) => request.id === depositId);
+    if (approvedRequest) {
+      void saveFirebaseDocument('deposits', depositId, {
+        ...approvedRequest,
+        status: 'approved',
+        reviewedBy: adminName,
+        reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      }).catch((error) => console.warn('[Firebase Deposit] Approval sync failed:', error));
+    }
 
     adjustUserBalance({
       userId: dep.userId,
@@ -2270,7 +2245,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : d
       )
     );
-    updateDepositStatusInSupabase(depositId, 'rejected');
+    const rejectedRequest = depositRequests.find((request) => request.id === depositId);
+    if (rejectedRequest) {
+      void saveFirebaseDocument('deposits', depositId, {
+        ...rejectedRequest,
+        status: 'rejected',
+        note: note || rejectedRequest.note,
+        reviewedBy: adminName,
+        reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      }).catch((error) => console.warn('[Firebase Deposit] Rejection sync failed:', error));
+    }
     const dep = depositRequests.find((d) => d.id === depositId);
     logAuditAction(
       'DEPOSIT_REJECTED',
@@ -2309,8 +2293,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (available < amount) {
       return { success: false, message: `Insufficient ${isFunding ? 'Funding' : 'Trading'} balance ($${available.toFixed(2)} available).` };
     }
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Cloud connection is unavailable. The withdrawal was not submitted and no balance was deducted.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase connection is unavailable. The withdrawal was not submitted and no balance was deducted.' };
     }
 
     const oldFunding = currentUser.fundingBalance || 0;
@@ -2332,17 +2316,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
 
-    if (isSupabaseConfigured()) {
-      const balanceSave = await updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
-      if (!balanceSave.success) {
-        return { success: false, message: `Withdrawal not submitted: balance could not be saved. ${balanceSave.error || ''}`.trim() };
+    try {
+      await saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: newTrading,
+        fundingBalance: newFunding,
+      });
+      await saveFirebaseDocument('withdrawals', newReq.id, newReq);
+    } catch (error) {
+      try {
+        await saveFirebaseDocument('users', currentUser.id, {
+          tradingBalance: oldTrading,
+          fundingBalance: oldFunding,
+        });
+      } catch (rollbackError) {
+        console.error('[Firebase Withdrawal] Balance rollback failed:', rollbackError);
       }
-      const requestSave = await syncWithdrawalToSupabase(newReq);
-      if (!requestSave.success) {
-        const rollback = await updateUserBalanceInSupabase(currentUser.id, oldTrading, oldFunding);
-        console.error('[Withdrawal] Request save failed; balance rollback:', rollback.success, requestSave.error);
-        return { success: false, message: `Withdrawal not submitted because cloud saving failed. ${requestSave.error || ''}`.trim() };
-      }
+      console.error('[Firebase Withdrawal] Cloud save failed:', error);
+      return { success: false, message: 'Withdrawal was not submitted because Firebase could not save the request. The balance rollback was attempted.' };
     }
 
     setUsers((prev) => prev.map((u) => u.id === currentUser.id
@@ -2377,7 +2367,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : w
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'approved');
+    void saveFirebaseDocument('withdrawals', withdrawalId, {
+      ...wth,
+      status: 'approved',
+      reviewedBy: adminName,
+      reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    }).catch((error) => console.warn('[Firebase Withdrawal] Approval sync failed:', error));
 
     logAuditAction(
       'WITHDRAWAL_APPROVED',
@@ -2407,7 +2402,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : u
       )
     );
-    updateUserBalanceInSupabase(wth.userId, refundedTrading, refundedFunding);
+    void saveFirebaseDocument('users', wth.userId, {
+      tradingBalance: refundedTrading,
+      fundingBalance: refundedFunding,
+    }).catch((error) => console.warn('[Firebase Withdrawal] Refund balance sync failed:', error));
 
     setWithdrawalRequests((prev) =>
       prev.map((w) =>
@@ -2423,7 +2421,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : w
       )
     );
-    updateWithdrawalStatusInSupabase(withdrawalId, 'rejected', reason);
+    void saveFirebaseDocument('withdrawals', withdrawalId, {
+      ...wth,
+      status: 'rejected',
+      rejectReason: reason,
+      notes: reason,
+      reviewedBy: adminName,
+      reviewedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    }).catch((error) => console.warn('[Firebase Withdrawal] Rejection sync failed:', error));
 
     logAuditAction(
       'WITHDRAWAL_REJECTED',
@@ -2443,11 +2448,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
     setAuditLogs((prev) => [newLog, ...prev]);
-    if (isSupabaseConfigured()) {
-      void syncAuditLogToSupabase(newLog).then((result) => {
-        if (!result.success) console.error('[Audit] Activity log was not saved:', result.error);
-      });
-    }
+    void saveFirebaseDocument('auditLogs', newLog.id, newLog)
+      .catch((error) => console.error('[Firebase Audit] Activity log was not saved:', error));
   };
 
   const adminTransferFunds = ({ userId, amount, reason }: { userId: string; amount: number; reason: string }) => {
@@ -2463,7 +2465,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newTrading = Number((oldTrading + amount).toFixed(2));
 
     setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, fundingBalance: newFunding, tradingBalance: newTrading } : u));
-    updateUserBalanceInSupabase(userId, newTrading, newFunding);
+    void saveFirebaseDocument('users', userId, {
+      tradingBalance: newTrading,
+      fundingBalance: newFunding,
+    }).catch((error) => console.warn('[Firebase Balance] Admin transfer sync failed:', error));
 
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
     const entries: BalanceAdjustment[] = [
@@ -2471,6 +2476,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       { id: `adj-${Date.now()}-trading`, userId, userName: target.name, amount, type: 'correction', previousBalance: oldTrading, newBalance: newTrading, reason: `[Admin Transfer: Funding → Trading] ${reason}`, adminId: 'admin-01', adminName, timestamp },
     ];
     setBalanceAdjustments((prev) => [...entries, ...prev]);
+    entries.forEach((entry) => {
+      void saveFirebaseDocument('balanceAdjustments', entry.id, entry)
+        .catch((error) => console.warn('[Firebase Balance] Admin transfer history sync failed:', error));
+    });
     logAuditAction('ADMIN_WALLET_TRANSFER', `${target.name} (${target.uid})`, `Transferred ${amount.toFixed(2)} from Funding Wallet to Trading Wallet. Reason: ${reason}`);
     return { success: true, message: `Transferred ${amount.toFixed(2)} from Funding to Trading for ${target.name}.` };
   };
@@ -2517,8 +2526,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         )
       );
 
-      // Persist to Supabase immediately so background sync/realtime preserves the new balances
-      updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+      void saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: newTrading,
+        fundingBalance: newFunding,
+      }).catch((error) => console.warn('[Firebase Balance] Wallet transfer sync failed:', error));
 
       logAuditAction(
         'WALLET_TRANSFER',
@@ -2552,8 +2563,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         )
       );
 
-      // Persist to Supabase immediately so background sync/realtime preserves the new balances
-      updateUserBalanceInSupabase(currentUser.id, newTrading, newFunding);
+      void saveFirebaseDocument('users', currentUser.id, {
+        tradingBalance: newTrading,
+        fundingBalance: newFunding,
+      }).catch((error) => console.warn('[Firebase Balance] Wallet transfer sync failed:', error));
 
       logAuditAction(
         'WALLET_TRANSFER',
@@ -2568,7 +2581,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSystemSettings = (newSettings: Partial<SystemSettings>) => {
-    setSystemSettings((prev) => ({ ...prev, ...newSettings }));
+    setSystemSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      void saveFirebaseDocument('systemSettings', 'global', updated)
+        .catch((error) => console.warn('[Firebase Settings] Platform settings sync failed:', error));
+      return updated;
+    });
     logAuditAction('SETTINGS_UPDATED', 'Platform Settings', 'System configuration updated.');
   };
 
@@ -2590,8 +2608,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
-        refreshAllFromSupabase,
-        isSupabaseSynced,
+        refreshAllFromFirebase,
+        isFirebaseSynced,
         users,
         currentUser,
         switchUser,
@@ -2681,3 +2699,5 @@ export const useApp = () => {
   if (!context) throw new Error('useApp must be used within an AppProvider');
   return context;
 };
+
+

@@ -1060,8 +1060,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (isFirebaseConfigured() && nowMs - lastSyncedAt >= 10000) {
             lastTradeCloudSyncRef.current[trade.id] = nowMs;
+            // Only patch live display fields; never let a stale tab write status: OPEN
+            // over a trade that another device has already settled.
             void saveFirebaseDocument('trades', trade.id, {
-              ...trade,
               currentPrice,
               pnl: livePnlRounded,
               pnlPercent: livePnlPercent,
@@ -1610,7 +1611,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       scheduledPercent: outcome ? safePercent : undefined,
     };
     try {
-      await saveFirebaseDocument('trades', tradeId, updatedTrade);
+      // Patch scheduling fields only so a late scheduling request cannot reopen
+      // a trade that another browser has already settled.
+      await saveFirebaseDocument('trades', tradeId, {
+        scheduledOutcome: outcome,
+        scheduledPercent: outcome ? safePercent : undefined,
+      });
       setTrades((prev) => prev.map((item) => item.id === tradeId ? updatedTrade : item));
       return { success: true, message: outcome ? `Scheduled ${outcome} at ${safePercent}% for expiry.` : 'Scheduled outcome cleared.' };
     } catch (error) {

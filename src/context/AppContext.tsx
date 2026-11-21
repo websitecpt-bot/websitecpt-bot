@@ -30,7 +30,7 @@ import {
   OFFICIAL_REFERRAL_CODES,
 } from '../data/initialData';
 import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword, logoutFromFirebase } from '../lib/firebaseAuth';
-import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection, settleFirebaseTrade, scheduleFirebaseTradeOutcome } from '../lib/firebaseData';
+import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection, settleFirebaseTrade, scheduleFirebaseTradeOutcome, openFirebaseTrade } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
@@ -1695,9 +1695,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Preserve the existing fee calculation and customer-facing trade rules.
     const fee = Number((positionSize * 0.000005).toFixed(2));
     const totalDeduction = margin + fee;
-    if (currentUser.tradingBalance < totalDeduction) {
-      return { success: false, message: 'Insufficient trading balance.' };
-    }
 
     const targetCoin = coins.find((c) => c.symbol === symbol);
     if (!targetCoin) return { success: false, message: 'Invalid symbol.' };
@@ -1706,7 +1703,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Firebase cloud connection is unavailable. Your trade was not opened. Please contact Support.' };
     }
 
-    const nextTradingBalance = Number((currentUser.tradingBalance - totalDeduction).toFixed(2));
     const now = new Date();
     const nowMs = now.getTime();
     const expiryMs = nowMs + durationMinutes * 60 * 1000;
@@ -1735,28 +1731,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fee,
     };
 
-    // Firebase is the source of truth for opening trades. Do not report success
-    // or change local balances unless both cloud writes complete.
+    // Firestore is the source of truth: create the trade and deduct the
+    // margin + fee from the matching customer profile in one transaction.
+    let confirmedTradingBalance: number;
     try {
-      await saveFirebaseDocument('trades', newTrade.id, newTrade);
-      await saveFirebaseDocument('users', currentUser.id, {
-        tradingBalance: nextTradingBalance,
-        fundingBalance: currentUser.fundingBalance,
-      });
+      confirmedTradingBalance = await openFirebaseTrade(newTrade, totalDeduction);
     } catch (firebaseError) {
-      try {
-        await deleteFirebaseDocument('trades', newTrade.id);
-      } catch (rollbackError) {
-        console.error('[Firebase Trade] Could not remove incomplete trade:', rollbackError);
-      }
-      console.error('[Firebase Trade] Save failed:', firebaseError);
+      console.error('[Firebase Trade] Atomic open failed:', firebaseError);
       return {
         success: false,
-        message: 'Trade not opened because Firebase could not save the trade and balance. No local balance was deducted. Please try again or contact Support.',
+        message: firebaseError instanceof Error
+          ? firebaseError.message
+          : 'Firebase could not confirm this trade. No local balance was deducted.',
       };
     }
 
-    setUsers((prev) => prev.map((u) => u.id === currentUser.id ? { ...u, tradingBalance: nextTradingBalance } : u));
+    setUsers((prev) => prev.map((u) => u.id === currentUser.id ? { ...u, tradingBalance: confirmedTradingBalance } : u));
     setTrades((prev) => [newTrade, ...prev]);
     return { success: true, message: `Trade opened successfully for ${symbol}!` };
   };

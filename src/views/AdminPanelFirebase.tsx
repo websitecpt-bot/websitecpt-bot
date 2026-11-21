@@ -124,8 +124,8 @@ export const AdminPanelFirebase: React.FC = () => {
     // password is still verified by Firebase Authentication in loginUser().
     const seededSuperAdmin = initialUsers.find((user) => user.role === 'superadmin');
     const superAdminAccount =
-      users.find((user) => user.role === 'superadmin') ||
-      users.find((user) => seededSuperAdmin && (
+      users.find((user) => user.role === 'superadmin' && Boolean(user.email)) ||
+      users.find((user) => seededSuperAdmin && Boolean(user.email) && (
         user.id === seededSuperAdmin.id ||
         String(user.email || '').trim().toLowerCase() === seededSuperAdmin.email.toLowerCase()
       )) ||

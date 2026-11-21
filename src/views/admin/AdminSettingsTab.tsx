@@ -278,6 +278,9 @@ export const AdminSettingsTab: React.FC = () => {
         <p className="text-[11px] leading-relaxed text-slate-300">
           Copy the customer accounts and records retained in this browser's previous app cache into Firebase. Existing Firebase documents are never overwritten; matching accounts are linked by their account ID or email, and legacy passwords are excluded.
         </p>
+        <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-2.5 text-[10px] leading-relaxed text-amber-100">
+          Important: this copies only what is still cached in this browser. The cache may be older than the last Supabase database snapshot. Compare the customer balances against the latest source records before running it; this tool does not contact Supabase or guarantee that the browser cache is complete.
+        </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"

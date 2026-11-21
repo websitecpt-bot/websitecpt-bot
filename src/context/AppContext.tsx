@@ -30,7 +30,7 @@ import {
   OFFICIAL_REFERRAL_CODES,
 } from '../data/initialData';
 import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword, logoutFromFirebase } from '../lib/firebaseAuth';
-import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection } from '../lib/firebaseData';
+import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection, settleFirebaseTrade } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
@@ -105,8 +105,8 @@ interface AppContextType {
     durationMinutes: number;
   }) => Promise<{ success: boolean; message: string }>;
   closeTrade: (tradeId: string) => void;
-  setTradeOutcome: (tradeId: string, outcome: 'WIN' | 'LOSS' | null, percent?: number) => void;
-  adminSettleTrade: (tradeId: string, outcome: 'WIN' | 'LOSS', percent?: number) => void;
+  setTradeOutcome: (tradeId: string, outcome: 'WIN' | 'LOSS' | null, percent?: number) => Promise<{ success: boolean; message: string }>;
+  adminSettleTrade: (tradeId: string, outcome: 'WIN' | 'LOSS', percent?: number) => Promise<{ success: boolean; message: string }>;
 
   // Support system & Real-time Presence
   supportTickets: SupportTicket[];
@@ -246,6 +246,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => loadState('settings', initialSystemSettings));
   // Throttle live position snapshots so Admin receives fresh P/L without writing every 500ms.
   const lastTradeCloudSyncRef = useRef<Record<string, number>>({});
+  // Prevent repeated expiry attempts in this tab while the Firestore transaction runs.
+  const settlingTradeIdsRef = useRef<Set<string>>(new Set());
 
   // Navigation & UI state with URL /admin, /login, /register, /agreement router detection
   const [activeTab, setActiveTab] = useState<'home' | 'market' | 'trade' | 'history' | 'account' | 'admin' | 'login' | 'agreement'>(() => {
@@ -880,157 +882,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, [marketDataMode]);
 
-  // Dedicated fast 500ms timer loop: Auto-close trades precisely on duration expiry & settle PnL
+  // Dedicated fast 500ms timer loop: auto-expiry uses the same atomic settlement as Admin.
   useEffect(() => {
     // Admin monitoring must never settle customer positions from the Admin browser's
     // independent market feed. Only the customer-side trading session runs this timer.
-    if (typeof window !== 'undefined' && window.sessionStorage.getItem('cpt_admin_auth') === 'true') {
-      return;
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage.getItem('cpt_admin_auth') === 'true') return;
+    } catch {
+      // Continue safely when session storage is unavailable.
     }
+
     const timer = setInterval(() => {
       const now = new Date();
       const nowMs = now.getTime();
 
       setTrades((prevTrades) => {
-        const hasOpen = prevTrades.some((t) => t.status === 'OPEN');
-        if (!hasOpen) return prevTrades;
+        if (!prevTrades.some((trade) => trade.status === 'OPEN')) return prevTrades;
 
-        let hasExpired = false;
-        const payouts: { userId: string; returnAmount: number }[] = [];
+        return prevTrades.map((trade) => {
+          if (trade.status !== 'OPEN') return trade;
 
-        const updated = prevTrades.map((t) => {
-          if (t.status !== 'OPEN') return t;
-
-          let expiryMs = t.expiresAtMs;
+          let expiryMs = trade.expiresAtMs;
           if (!expiryMs || isNaN(expiryMs) || expiryMs <= 0) {
-            if (t.expiresAt && t.expiresAt.includes('T')) {
-              expiryMs = new Date(t.expiresAt).getTime();
-            } else if (t.expiresAt) {
-              expiryMs = new Date(t.expiresAt.replace(' ', 'T') + 'Z').getTime() || new Date(t.expiresAt).getTime();
+            if (trade.expiresAt && trade.expiresAt.includes('T')) {
+              expiryMs = new Date(trade.expiresAt).getTime();
+            } else if (trade.expiresAt) {
+              expiryMs = new Date(trade.expiresAt.replace(' ', 'T') + 'Z').getTime() || new Date(trade.expiresAt).getTime();
             }
           }
 
-          // If still missing/NaN, calculate from openedAt + durationMinutes
           if (!expiryMs || isNaN(expiryMs) || expiryMs <= 0) {
-            const openedMs = t.openedAt ? new Date(t.openedAt).getTime() : 0;
-            if (openedMs > 0 && !isNaN(openedMs)) {
-              expiryMs = openedMs + (t.durationMinutes || 1) * 60 * 1000;
-            }
+            const openedMs = trade.openedAt ? new Date(trade.openedAt).getTime() : 0;
+            if (openedMs > 0 && !isNaN(openedMs)) expiryMs = openedMs + (trade.durationMinutes || 1) * 60 * 1000;
           }
 
-          // Protection: never auto-expire a trade opened less than 10 seconds ago
-          const openedTime = t.openedAt ? new Date(t.openedAt).getTime() : 0;
-          const isFreshTrade = openedTime > 0 && (nowMs - openedTime < 10000);
-
+          const openedTime = trade.openedAt ? new Date(trade.openedAt).getTime() : 0;
+          const isFreshTrade = openedTime > 0 && nowMs - openedTime < 10000;
           const isExpired = !isFreshTrade && typeof expiryMs === 'number' && expiryMs > 0 && !Number.isNaN(expiryMs) && nowMs >= expiryMs;
-
-          const targetCoin = coins.find((c) => c.symbol === t.symbol);
-          const curPrice = targetCoin ? targetCoin.price : t.currentPrice;
-
-          let pnl = 0;
-          if (t.type === 'BUY') {
-            pnl = ((curPrice - t.entryPrice) / t.entryPrice) * t.positionSize;
-          } else {
-            pnl = ((t.entryPrice - curPrice) / t.entryPrice) * t.positionSize;
-          }
-          const pnlPercent = (pnl / t.margin) * 100;
+          const targetCoin = coins.find((coin) => coin.symbol === trade.symbol);
+          const currentPrice = targetCoin ? targetCoin.price : trade.currentPrice;
 
           if (isExpired) {
-            hasExpired = true;
-
-            let finalExitPrice = curPrice;
-            let finalPnl = pnl;
-            let finalPnlPercent = pnlPercent;
-
-            if (t.scheduledOutcome === 'WIN') {
-              const winPct = t.scheduledPercent ?? 35;
-              finalPnl = Number((t.margin * (winPct / 100)).toFixed(2));
-              finalPnlPercent = winPct;
-              if (t.type === 'BUY') {
-                finalExitPrice = Number((t.entryPrice * (1 + (winPct / 100) / t.leverage)).toFixed(t.entryPrice > 100 ? 2 : 4));
-              } else {
-                finalExitPrice = Number((t.entryPrice * (1 - (winPct / 100) / t.leverage)).toFixed(t.entryPrice > 100 ? 2 : 4));
-              }
-            } else if (t.scheduledOutcome === 'LOSS') {
-              const lossPct = t.scheduledPercent ?? 100;
-              finalPnl = -Number((t.margin * (lossPct / 100)).toFixed(2));
-              finalPnlPercent = -lossPct;
-              if (t.type === 'BUY') {
-                finalExitPrice = Number((t.entryPrice * (1 - (lossPct / 100) / t.leverage)).toFixed(t.entryPrice > 100 ? 2 : 4));
-              } else {
-                finalExitPrice = Number((t.entryPrice * (1 + (lossPct / 100) / t.leverage)).toFixed(t.entryPrice > 100 ? 2 : 4));
-              }
+            if (isFirebaseConfigured() && !settlingTradeIdsRef.current.has(trade.id)) {
+              settlingTradeIdsRef.current.add(trade.id);
+              const scheduled = trade.scheduledOutcome === 'WIN' || trade.scheduledOutcome === 'LOSS'
+                ? trade.scheduledOutcome
+                : 'MARKET';
+              void settleFirebaseTrade({
+                tradeId: trade.id,
+                outcome: scheduled,
+                percent: trade.scheduledPercent,
+                marketPrice: currentPrice,
+                closedAt: now.toISOString().replace('T', ' ').slice(0, 19),
+              }).then((result) => {
+                setTrades((items) => items.map((item) => item.id === trade.id ? result.trade as Trade : item));
+                setUsers((items) => items.map((user) =>
+                  user.id === result.userId ? { ...user, tradingBalance: result.tradingBalance } : user
+                ));
+              }).catch((error) => {
+                console.error('[Firebase Trade] Atomic auto-settlement failed:', error, trade.id);
+              }).finally(() => {
+                settlingTradeIdsRef.current.delete(trade.id);
+              });
             }
-
-            const finalReturn = Math.max(0, Number((t.margin + finalPnl).toFixed(2)));
-            payouts.push({ userId: t.userId, returnAmount: finalReturn });
-
-            const closedTradeItem: Trade = {
-              ...t,
-              currentPrice: finalExitPrice,
-              exitPrice: finalExitPrice,
-              pnl: Number(finalPnl.toFixed(2)),
-              pnlPercent: Number(finalPnlPercent.toFixed(2)),
-              status: 'CLOSED' as const,
-              closedAt: now.toISOString().replace('T', ' ').slice(0, 19),
-            };
-            if (isFirebaseConfigured()) {
-              void saveFirebaseDocument('trades', closedTradeItem.id, closedTradeItem)
-                .catch((e) => console.warn('[Firebase Trade] Auto-close sync notice:', e));
-            }
-            return closedTradeItem;
+            // Keep the local position OPEN until Firestore confirms the transaction.
+            return trade;
           }
 
-          const livePnl = Number(pnl.toFixed(2));
-          const livePnlPercent = Number(pnlPercent.toFixed(2));
-          // Persist the live market snapshot every 10 seconds. Realtime sends the
-          // changed trade row to other devices without reloading the full trade table.
-          const lastSyncedAt = lastTradeCloudSyncRef.current[t.id] || 0;
+          const livePnl = trade.type === 'BUY'
+            ? ((currentPrice - trade.entryPrice) / trade.entryPrice) * trade.positionSize
+            : ((trade.entryPrice - currentPrice) / trade.entryPrice) * trade.positionSize;
+          const livePnlRounded = Number(livePnl.toFixed(2));
+          const livePnlPercent = trade.margin > 0 ? Number((livePnl / trade.margin * 100).toFixed(2)) : 0;
+          const lastSyncedAt = lastTradeCloudSyncRef.current[trade.id] || 0;
+
           if (isFirebaseConfigured() && nowMs - lastSyncedAt >= 10000) {
-            lastTradeCloudSyncRef.current[t.id] = nowMs;
-            void saveFirebaseDocument('trades', t.id, {
-              ...t,
-              currentPrice: curPrice,
-              pnl: livePnl,
+            lastTradeCloudSyncRef.current[trade.id] = nowMs;
+            void saveFirebaseDocument('trades', trade.id, {
+              ...trade,
+              currentPrice,
+              pnl: livePnlRounded,
               pnlPercent: livePnlPercent,
-            }).catch((error) => console.warn('[Firebase Trade] Live snapshot not saved:', error, t.id));
+            }).catch((error) => console.warn('[Firebase Trade] Live snapshot not saved:', error, trade.id));
           }
 
-          return {
-            ...t,
-            currentPrice: curPrice,
-            pnl: livePnl,
-            pnlPercent: livePnlPercent,
-          };
+          return { ...trade, currentPrice, pnl: livePnlRounded, pnlPercent: livePnlPercent };
         });
-
-        if (hasExpired && payouts.length > 0) {
-          setTimeout(() => {
-            setUsers((prevUsers) =>
-              prevUsers.map((u) => {
-                const userPayouts = payouts.filter((p) => p.userId === u.id);
-                if (userPayouts.length > 0) {
-                  const totalReturn = userPayouts.reduce((sum, p) => sum + p.returnAmount, 0);
-                  const updatedTradingBalance = Number((u.tradingBalance + totalReturn).toFixed(2));
-
-                  // Margin was deducted when the trade opened; return margin + PnL here.
-                  if (isFirebaseConfigured()) {
-                    void saveFirebaseDocument('users', u.id, { tradingBalance: updatedTradingBalance })
-                      .catch((error) => console.warn('[Firebase Balance] Trade expiry balance sync failed:', error));
-                  }
-
-                  return {
-                    ...u,
-                    tradingBalance: updatedTradingBalance,
-                  };
-                }
-                return u;
-              })
-            );
-          }, 0);
-        }
-
-        return updated;
       });
     }, 500);
 
@@ -1528,144 +1465,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const closeTrade = (tradeId: string) => {
-    const trade = trades.find((t) => t.id === tradeId);
-    if (!trade || trade.status !== 'OPEN') return;
+    const trade = trades.find((item) => item.id === tradeId);
+    if (!trade || trade.status !== 'OPEN' || !isFirebaseConfigured()) return;
+    const targetCoin = coins.find((coin) => coin.symbol === trade.symbol);
+    const currentPrice = targetCoin ? targetCoin.price : trade.currentPrice;
 
-    const targetCoin = coins.find((c) => c.symbol === trade.symbol);
-    const curPrice = targetCoin ? targetCoin.price : trade.currentPrice;
-
-    let pnl = 0;
-    if (trade.type === 'BUY') {
-      pnl = ((curPrice - trade.entryPrice) / trade.entryPrice) * trade.positionSize;
-    } else {
-      pnl = ((trade.entryPrice - curPrice) / trade.entryPrice) * trade.positionSize;
-    }
-    const pnlPercent = (pnl / trade.margin) * 100;
-    const finalReturn = Math.max(0, trade.margin + pnl);
-    // Always credit the owner of this trade, never whichever account happens to be
-    // logged in on this browser (Admin may be viewing/closing another customer's trade).
-    const tradeOwner = users.find((u) => u.id === trade.userId);
-    if (!tradeOwner) {
-      console.error('[Trade settlement] Owner not found; refusing to credit the wrong account.', trade.userId);
-      return;
-    }
-    const updatedBal = Number((tradeOwner.tradingBalance + finalReturn).toFixed(2));
-
-    // Return the margin and realized P/L to the actual trade owner.
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === trade.userId
-          ? { ...u, tradingBalance: updatedBal }
-          : u
-      )
-    );
-
-    const closedTrade: Trade = {
-      ...trade,
-      status: 'CLOSED',
-      exitPrice: curPrice,
-      pnl: Number(pnl.toFixed(2)),
-      pnlPercent: Number(pnlPercent.toFixed(2)),
-      closedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-    };
-
-    // Mark trade closed
-    setTrades((prev) =>
-      prev.map((t) => (t.id === tradeId ? closedTrade : t))
-    );
-
-    void Promise.all([
-      saveFirebaseDocument('trades', closedTrade.id, closedTrade),
-      saveFirebaseDocument('users', trade.userId, { tradingBalance: updatedBal }),
-    ]).catch((error) => console.warn('[Firebase Trade] Close/settlement sync failed:', error));
+    if (settlingTradeIdsRef.current.has(tradeId)) return;
+    settlingTradeIdsRef.current.add(tradeId);
+    void settleFirebaseTrade({
+      tradeId,
+      outcome: 'MARKET',
+      marketPrice: currentPrice,
+    }).then((result) => {
+      setTrades((prev) => prev.map((item) => item.id === tradeId ? result.trade as Trade : item));
+      setUsers((prev) => prev.map((user) =>
+        user.id === result.userId ? { ...user, tradingBalance: result.tradingBalance } : user
+      ));
+    }).catch((error) => {
+      console.error('[Firebase Trade] Manual close failed:', error, tradeId);
+    }).finally(() => {
+      settlingTradeIdsRef.current.delete(tradeId);
+    });
   };
 
-  const setTradeOutcome = (tradeId: string, outcome: 'WIN' | 'LOSS' | null, percent: number = 35) => {
-    setTrades((prev) =>
-      prev.map((t) =>
-        t.id === tradeId
-          ? {
-              ...t,
-              scheduledOutcome: outcome,
-              scheduledPercent: percent,
-            }
-          : t
-      )
-    );
-    const target = trades.find((t) => t.id === tradeId);
-    if (target) {
-      void saveFirebaseDocument('trades', target.id, {
-        ...target,
-        scheduledOutcome: outcome,
-        scheduledPercent: percent,
-      }).catch((error) => console.warn('[Firebase Trade] Outcome schedule sync failed:', error));
-    }
-  };
+  const setTradeOutcome = async (
+    tradeId: string,
+    outcome: 'WIN' | 'LOSS' | null,
+    percent: number = 35
+  ): Promise<{ success: boolean; message: string }> => {
+    const trade = trades.find((item) => item.id === tradeId);
+    if (!trade || trade.status !== 'OPEN') return { success: false, message: 'This trade is no longer open.' };
+    if (!isFirebaseConfigured()) return { success: false, message: 'Firebase is unavailable. The outcome was not saved.' };
 
-  const adminSettleTrade = (tradeId: string, outcome: 'WIN' | 'LOSS', percent: number = 35) => {
-    const trade = trades.find((t) => t.id === tradeId);
-    if (!trade || trade.status !== 'OPEN') return;
-
-    let finalExitPrice = trade.currentPrice;
-    let finalPnl = 0;
-    let finalPnlPercent = 0;
-
-    if (outcome === 'WIN') {
-      finalPnl = Number((trade.margin * (percent / 100)).toFixed(2));
-      finalPnlPercent = percent;
-      if (trade.type === 'BUY') {
-        finalExitPrice = Number((trade.entryPrice * (1 + (percent / 100) / trade.leverage)).toFixed(trade.entryPrice > 100 ? 2 : 4));
-      } else {
-        finalExitPrice = Number((trade.entryPrice * (1 - (percent / 100) / trade.leverage)).toFixed(trade.entryPrice > 100 ? 2 : 4));
-      }
-    } else {
-      const lossPct = percent || 100;
-      finalPnl = -Number((trade.margin * (lossPct / 100)).toFixed(2));
-      finalPnlPercent = -lossPct;
-      if (trade.type === 'BUY') {
-        finalExitPrice = Number((trade.entryPrice * (1 - (lossPct / 100) / trade.leverage)).toFixed(trade.entryPrice > 100 ? 2 : 4));
-      } else {
-        finalExitPrice = Number((trade.entryPrice * (1 + (lossPct / 100) / trade.leverage)).toFixed(trade.entryPrice > 100 ? 2 : 4));
-      }
+    const safePercent = Number(percent);
+    if (outcome && (!Number.isFinite(safePercent) || safePercent < 1 || safePercent > 5000)) {
+      return { success: false, message: 'Enter a valid outcome percentage from 1% to 5000%.' };
     }
 
-    const finalReturn = Math.max(0, Number((trade.margin + finalPnl).toFixed(2)));
-
-    // Credit the actual owner of this trade and persist the balance in Firebase.
-    const tradeOwner = users.find((user) => user.id === trade.userId);
-    if (!tradeOwner) {
-      console.error('[Trade settlement] Owner not found; refusing to credit the wrong account.', trade.userId);
-      return;
-    }
-    const newTradingBal = Number(((tradeOwner.tradingBalance || 0) + finalReturn).toFixed(2));
-    setUsers((prev) => prev.map((user) =>
-      user.id === trade.userId ? { ...user, tradingBalance: newTradingBal } : user
-    ));
-    void saveFirebaseDocument('users', trade.userId, { tradingBalance: newTradingBal })
-      .catch((error) => console.warn('[Firebase Balance] Admin settlement sync failed:', error));
-
-    const closedTrade: Trade = {
+    const updatedTrade: Trade = {
       ...trade,
-      status: 'CLOSED',
-      currentPrice: finalExitPrice,
-      exitPrice: finalExitPrice,
-      pnl: Number(finalPnl.toFixed(2)),
-      pnlPercent: Number(finalPnlPercent.toFixed(2)),
       scheduledOutcome: outcome,
-      scheduledPercent: percent,
-      closedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      scheduledPercent: outcome ? safePercent : undefined,
     };
+    try {
+      await saveFirebaseDocument('trades', tradeId, updatedTrade);
+      setTrades((prev) => prev.map((item) => item.id === tradeId ? updatedTrade : item));
+      return { success: true, message: outcome ? `Scheduled ${outcome} at ${safePercent}% for expiry.` : 'Scheduled outcome cleared.' };
+    } catch (error) {
+      console.error('[Firebase Trade] Outcome schedule save failed:', error);
+      return { success: false, message: error instanceof Error ? error.message : 'Firebase could not save the scheduled outcome.' };
+    }
+  };
 
-    setTrades((prev) => prev.map((t) => (t.id === tradeId ? closedTrade : t)));
+  const adminSettleTrade = async (
+    tradeId: string,
+    outcome: 'WIN' | 'LOSS',
+    percent: number = 35
+  ): Promise<{ success: boolean; message: string }> => {
+    const trade = trades.find((item) => item.id === tradeId);
+    if (!trade || trade.status !== 'OPEN') return { success: false, message: 'This trade is no longer open.' };
+    if (!isFirebaseConfigured()) return { success: false, message: 'Firebase is unavailable. The trade was not settled.' };
 
-    void saveFirebaseDocument('trades', closedTrade.id, closedTrade)
-      .catch((error) => console.warn('[Firebase Trade] Admin settlement sync failed:', error));
+    const safePercent = Number(percent);
+    if (!Number.isFinite(safePercent) || safePercent < 1 || safePercent > 5000) {
+      return { success: false, message: 'Enter a valid settlement percentage from 1% to 5000%.' };
+    }
+    if (settlingTradeIdsRef.current.has(tradeId)) {
+      return { success: false, message: 'Settlement is already being processed for this trade.' };
+    }
 
-    logAuditAction(
-      'ADMIN_SETTLE_TRADE',
-      `${trade.userName} (${trade.userId})`,
-      `Trade #${trade.id} settled as ${outcome} (${percent}% profit/loss) with Exit Price: $${finalExitPrice}`
-    );
+    settlingTradeIdsRef.current.add(tradeId);
+    try {
+      const result = await settleFirebaseTrade({
+        tradeId,
+        outcome,
+        percent: safePercent,
+      });
+
+      setTrades((prev) => prev.map((item) => item.id === tradeId ? result.trade as Trade : item));
+      setUsers((prev) => prev.map((user) =>
+        user.id === result.userId ? { ...user, tradingBalance: result.tradingBalance } : user
+      ));
+
+      if (!result.settled) {
+        return { success: false, message: 'This trade was already settled elsewhere. No additional balance was credited.' };
+      }
+
+      logAuditAction(
+        'ADMIN_SETTLE_TRADE',
+        `${trade.userName} (${trade.userId})`,
+        `Trade #${trade.id} settled as ${outcome} (${safePercent}% of margin; PnL $${result.trade.pnl}).`
+      );
+      return {
+        success: true,
+        message: `Trade #${tradeId} settled as ${outcome} (${safePercent}%). Customer credited $${(Number(result.trade.margin) + Number(result.trade.pnl)).toFixed(2)}.`,
+      };
+    } catch (error) {
+      console.error('[Firebase Trade] Atomic Admin settlement failed:', error, tradeId);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Firebase could not confirm settlement. The trade and balance were not changed locally.',
+      };
+    } finally {
+      settlingTradeIdsRef.current.delete(tradeId);
+    }
   };
 
   // Support System

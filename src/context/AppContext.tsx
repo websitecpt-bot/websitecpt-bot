@@ -967,6 +967,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTrades((prev) => mergeCloudItems(prev, items).sort(
           (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
         ));
+        // Older trade records keep userName even when a user profile document is partial.
+        setUsers((prev) => prev.map((user) => normalizeFirebaseUser(user, items, supportTicketsRef.current)));
         setIsFirebaseSynced(usersReady && tradesReady);
       }, onError('trades')),
       subscribeFirebaseCollection<DepositRequest>('deposits', (items) => {
@@ -987,9 +989,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }, onError('balanceAdjustments')),
       subscribeFirebaseCollection<SupportTicket>('supportTickets', (items) => {
         if (!isMounted) return;
-        setSupportTickets(items.map(normalizeSupportTicket).sort(
+        const normalizedTickets = items.map(normalizeSupportTicket).sort(
           (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
-        ));
+        );
+        setSupportTickets(normalizedTickets);
+        // Preserve customer names from earlier Support history when the profile document is incomplete.
+        setUsers((prev) => prev.map((user) => normalizeFirebaseUser(user, tradesRef.current, normalizedTickets)));
       }, onError('supportTickets')),
       subscribeFirebaseCollection<MarketCoin>('marketCoins', (items) => {
         if (!isMounted || items.length === 0) return;

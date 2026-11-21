@@ -35,8 +35,6 @@ import {
   fetchUsersFromSupabase,
   fetchTradesFromSupabase,
   fetchTradeFromSupabase,
-  fetchTicketsFromSupabase,
-  fetchSupportTicketFromSupabase,
   fetchDepositsFromSupabase,
   fetchWithdrawalsFromSupabase,
   fetchAuditLogsFromSupabase,
@@ -44,13 +42,11 @@ import {
   updateUserBalanceInSupabase,
   updateUserStatusInSupabase,
   syncTradeToSupabase,
-  syncTicketToSupabase,
   syncDepositToSupabase,
   updateDepositStatusInSupabase,
   syncWithdrawalToSupabase,
   updateWithdrawalStatusInSupabase,
   syncAuditLogToSupabase,
-  deleteSupportTicketFromSupabase,
   subscribeToSupabaseRealtime,
   supabaseAuthSignUp,
   supabaseAuthSignIn,
@@ -626,9 +622,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ]);
       const cloudUsers = results[0].status === 'fulfilled' ? results[0].value : null;
       const cloudTrades = results[1].status === 'fulfilled' ? results[1].value : null;
-      const cloudDeposits = results[3].status === 'fulfilled' ? results[3].value : null;
-      const cloudWithdrawals = results[4].status === 'fulfilled' ? results[4].value : null;
-      const cloudAudit = results[5].status === 'fulfilled' ? results[5].value : null;
+      const cloudDeposits = results[2].status === 'fulfilled' ? results[2].value : null;
+      const cloudWithdrawals = results[3].status === 'fulfilled' ? results[3].value : null;
+      const cloudAudit = results[4].status === 'fulfilled' ? results[4].value : null;
 
       if (cloudUsers && cloudUsers.length > 0) {
         setUsers((prev) => {

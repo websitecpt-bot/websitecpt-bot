@@ -1794,8 +1794,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     attachment?: { url: string; name: string; type: 'image' | 'file' }
   ): Promise<{ success: boolean; message: string; ticketId?: string }> => {
     if (!text.trim() && !attachment) return { success: false, message: 'Enter a message or attach a file.' };
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Support cloud connection is unavailable. Your message was not sent.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Support connection is unavailable. Your message was not sent.' };
     }
 
     const nowStr = new Date().toISOString();
@@ -1839,12 +1839,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           messages: [newMsg],
         };
 
-    if (isSupabaseConfigured()) {
-      const save = await persistSupportTicket(updatedTicket);
-      if (!save.success) {
-        console.error('[Support] User message cloud save failed:', save.error);
-        return { success: false, message: `Message was not sent because cloud saving failed. ${save.error || ''}`.trim() };
-      }
+    const save = await persistSupportTicket(updatedTicket);
+if (!save.success) {
+      console.error('[Firebase Support] User message save failed:', save.error);
+      return { success: false, message: `Message was not sent because Firebase saving failed. ${save.error || ''}`.trim() };
     }
 
     const updatedList = activeTicket
@@ -1859,8 +1857,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const startNewSupportChat = async (userId?: string): Promise<{ success: boolean; message: string; ticketId?: string }> => {
     const targetId = userId || currentUser.id;
     const targetUser = users.find((u) => u.id === targetId) || currentUser;
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Support cloud connection is unavailable. A new chat was not opened.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Support connection is unavailable. A new chat was not opened.' };
     }
 
     const nowStr = new Date().toISOString();
@@ -1882,18 +1880,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const previouslyOpen = userTickets.filter((t) => !t.isSessionClosed && t.status !== 'closed');
-    if (isSupabaseConfigured()) {
-      const saves = await Promise.all([
+    const saves = await Promise.all([
         ...previouslyOpen.map((ticket) =>
           persistSupportTicket({ ...ticket, status: 'closed', isSessionClosed: true })
         ),
         persistSupportTicket(newTicket),
       ]);
       const failed = saves.find((result) => !result.success);
-      if (failed) {
-        console.error('[Support] New session cloud save failed:', failed.error);
-        return { success: false, message: `A new chat could not be saved. ${failed.error || ''}`.trim() };
-      }
+if (failed) {
+      console.error('[Firebase Support] New session save failed:', failed.error);
+      return { success: false, message: `A new chat could not be saved. ${failed.error || ''}`.trim() };
     }
 
     setSupportTickets((prev) => {
@@ -2016,8 +2012,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     attachment?: { url: string; name: string; type: 'image' | 'file' }
   ): Promise<{ success: boolean; message: string }> => {
     if (!text.trim() && !attachment) return { success: false, message: 'Enter a reply or attach a file.' };
-    if (import.meta.env.PROD && !isSupabaseConfigured()) {
-      return { success: false, message: 'Support cloud connection is unavailable. The reply was not sent.' };
+    if (!isFirebaseConfigured()) {
+      return { success: false, message: 'Firebase Support connection is unavailable. The reply was not sent.' };
     }
 
     const ticket = supportTickets.find((item) => item.id === ticketId);
@@ -2050,12 +2046,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       messages: [...(ticket.messages || []), newMsg],
     };
 
-    if (isSupabaseConfigured()) {
-      const save = await persistSupportTicket(updatedTicket);
-      if (!save.success) {
-        console.error('[Support] Admin reply cloud save failed:', save.error);
-        return { success: false, message: `Reply was not sent because cloud saving failed. ${save.error || ''}`.trim() };
-      }
+    const save = await persistSupportTicket(updatedTicket);
+if (!save.success) {
+      console.error('[Firebase Support] Admin reply save failed:', save.error);
+      return { success: false, message: `Reply was not sent because Firebase saving failed. ${save.error || ''}`.trim() };
     }
 
     setSupportTickets((prev) => prev.map((item) => item.id === ticket.id ? updatedTicket : item)

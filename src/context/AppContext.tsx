@@ -552,7 +552,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorageSet('marketDataMode', marketDataMode);
   }, [marketDataMode]);
 
-  const currentUser = users.find((u) => u.id === currentUserId) || users[0];
+  // Keep the application and Admin portal usable if a device has a stale empty local users cache.
+  const currentUser = users.find((u) => u.id === currentUserId) || users[0] || initialUsers.find((u) => u.role === 'superadmin') || initialUsers[0];
   const isSuperAdmin =
     currentUser.role === 'superadmin' ||
     currentUser.email === 'ripuworkshop@gmail.com' ||

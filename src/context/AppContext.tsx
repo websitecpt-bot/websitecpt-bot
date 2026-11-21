@@ -30,7 +30,7 @@ import {
   OFFICIAL_REFERRAL_CODES,
 } from '../data/initialData';
 import { registerWithFirebase, loginOrMigrateWithFirebase, updateFirebasePassword, logoutFromFirebase } from '../lib/firebaseAuth';
-import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection, settleFirebaseTrade } from '../lib/firebaseData';
+import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection, fetchFirebaseCollection, settleFirebaseTrade, scheduleFirebaseTradeOutcome } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
@@ -1170,13 +1170,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (isExpired) {
             if (isFirebaseConfigured() && !settlingTradeIdsRef.current.has(trade.id)) {
               settlingTradeIdsRef.current.add(trade.id);
-              const scheduled = trade.scheduledOutcome === 'WIN' || trade.scheduledOutcome === 'LOSS'
-                ? trade.scheduledOutcome
-                : 'MARKET';
               void settleFirebaseTrade({
                 tradeId: trade.id,
-                outcome: scheduled,
-                percent: trade.scheduledPercent,
+                // The transaction reads the current scheduled outcome from Firestore.
+                // Never send a potentially stale local WIN/LOSS value here.
+                outcome: 'MARKET',
                 marketPrice: currentPrice,
                 closedAt: now.toISOString().replace('T', ' ').slice(0, 19),
               }).then((result) => {
@@ -1801,19 +1799,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Enter a valid outcome percentage from 1% to 5000%.' };
     }
 
-    const updatedTrade: Trade = {
-      ...trade,
-      scheduledOutcome: outcome,
-      scheduledPercent: outcome ? safePercent : undefined,
-    };
     try {
-      // Patch scheduling fields only so a late scheduling request cannot reopen
-      // a trade that another browser has already settled.
-      await saveFirebaseDocument('trades', tradeId, {
-        scheduledOutcome: outcome,
-        scheduledPercent: outcome ? safePercent : undefined,
-      });
-      setTrades((prev) => prev.map((item) => item.id === tradeId ? updatedTrade : item));
+      // The transaction refuses to schedule an outcome after another session
+      // has already closed this trade.
+      await scheduleFirebaseTradeOutcome(tradeId, outcome, outcome ? safePercent : undefined);
+      setTrades((prev) => prev.map((item) => item.id === tradeId
+        ? { ...item, scheduledOutcome: outcome, scheduledPercent: outcome ? safePercent : undefined }
+        : item
+      ));
       return { success: true, message: outcome ? `Scheduled ${outcome} at ${safePercent}% for expiry.` : 'Scheduled outcome cleared.' };
     } catch (error) {
       console.error('[Firebase Trade] Outcome schedule save failed:', error);

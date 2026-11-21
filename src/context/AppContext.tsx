@@ -1385,10 +1385,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             firebaseUsers.forEach((user) => merged.set(user.id, { ...merged.get(user.id), ...user } as User));
             return Array.from(merged.values());
           });
-          const match = firebaseUsers.find((u) => String(u.name || '').toLowerCase() === clean || String(u.email || '').toLowerCase() === clean || String(u.uid || '') === clean);
+          const match = firebaseUsers.find((u) =>
+            String(u.name || '').toLowerCase() === clean ||
+            String(u.email || '').toLowerCase() === clean ||
+            String(u.uid || '') === clean
+          );
           if (match) {
-            firebaseFound = match;
-            setUsers((prev) => [match, ...prev.filter((u) => u.id !== match.id)]);
+            firebaseFound = normalizeFirebaseUser(match);
+            setUsers((prev) => mergeCloudItems(prev, [firebaseFound as User]));
           }
         }
       } catch (err) {
@@ -1402,6 +1406,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         String(u.email || '').toLowerCase() === clean ||
         String(u.uid || '') === clean
     );
+
+    // Keep the established Super Admin identity available when the device cache
+    // lost its admin row and Firestore only contains customer documents.
+    const seededSuperAdmin = initialUsers.find((user) => user.role === 'superadmin');
+    const isSeedAdminIdentifier = Boolean(seededSuperAdmin && [
+      seededSuperAdmin.name,
+      seededSuperAdmin.email,
+      seededSuperAdmin.uid,
+    ].some((value) => String(value || '').trim().toLowerCase() === clean));
+    if (!found && isSeedAdminIdentifier && seededSuperAdmin) {
+      const cachedAdmin = users.find((user) =>
+        user.role === 'superadmin' ||
+        user.id === seededSuperAdmin.id ||
+        String(user.email || '').trim().toLowerCase() === seededSuperAdmin.email.toLowerCase()
+      );
+      found = cachedAdmin
+        ? normalizeFirebaseUser(cachedAdmin)
+        : { ...seededSuperAdmin, tradingBalance: 0, fundingBalance: 0 };
+    }
 
     if (!found) {
       return {
@@ -1437,11 +1460,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
 
         const { password: _password, ...firebaseProfile } = found;
-        await saveFirebaseDocument('users', found.id, {
-          ...firebaseProfile,
-          authUid: firebaseResult.user.uid,
-          authProvider: 'firebase',
-        });
+        // Never seed a placeholder Admin wallet with demo balances from initialData.
+        const profileToSave = found.role === 'superadmin'
+          ? {
+              id: found.id,
+              uid: found.uid,
+              name: found.name,
+              email: found.email,
+              status: found.status,
+              role: 'superadmin' as const,
+              createdAt: found.createdAt,
+              lastLogin: found.lastLogin,
+              authUid: firebaseResult.user.uid,
+              authProvider: 'firebase',
+            }
+          : {
+              ...firebaseProfile,
+              authUid: firebaseResult.user.uid,
+              authProvider: 'firebase',
+            };
+        await saveFirebaseDocument('users', found.id, profileToSave);
       } catch (firebaseError) {
         console.error('[Firebase Login/Migration failed]', firebaseError);
         return {
@@ -1451,6 +1489,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    // Ensure the account selected at sign-in is present in app state even if
+    // the Firebase users collection was incomplete on first load.
+    setUsers((prev) => mergeCloudItems(prev, [found as User]));
     setCurrentUserId(found.id);
     setIsUserLoggedIn(true);
 

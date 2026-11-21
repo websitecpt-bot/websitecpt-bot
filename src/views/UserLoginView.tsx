@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { OFFICIAL_REFERRAL_CODES } from '../data/initialData';
 import { CptLogo } from '../components/CptLogo';
-import { isSupabaseConfigured } from '../lib/supabase';
 
 export const UserLoginView: React.FC = () => {
   const { loginUser, registerUser, setIsSupportOpen, users, setActiveTab } = useApp();

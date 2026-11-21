@@ -745,7 +745,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!user?.id || skippedDemoIds.has(user.id)) continue;
         const emailKey = String(user.email || '').trim().toLowerCase();
         const uidKey = String(user.uid || '');
-        const existing = byId.get(user.id) || (emailKey ? byEmail.get(emailKey) : undefined) || (uidKey ? byUid.get(uidKey) : undefined);
+        const emailMatch = emailKey ? byEmail.get(emailKey) : undefined;
+        const uidMatch = uidKey ? byUid.get(uidKey) : undefined;
+        const existing = byId.get(user.id) || emailMatch || (!emailKey ? uidMatch : undefined);
+        if (!existing && uidMatch && emailKey && String(uidMatch.email || '').trim().toLowerCase() !== emailKey) {
+          failures.push(`user ${user.email || user.id}: UID collision with a different Firebase email; left untouched`);
+          continue;
+        }
         if (existing) {
           userIdMap.set(user.id, existing.id);
           continue;
@@ -764,7 +770,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      const migrateMissing = async <T extends { id: string; userId?: string }>(
+      const migrateMissing = async <T extends { id: string }>(
         collectionName: string,
         items: T[],
         countKey: keyof typeof counts,
@@ -774,7 +780,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const knownIds = new Set(existing.map((item) => String(item.id)));
         for (const item of items) {
           if (!item?.id || knownIds.has(item.id)) continue;
-          const mappedUserId = item.userId ? (userIdMap.get(item.userId) || item.userId) : undefined;
+          const sourceUserId = (item as T & { userId?: string }).userId;
+          const mappedUserId = sourceUserId ? (userIdMap.get(sourceUserId) || sourceUserId) : undefined;
           const migrated = transform({
             ...item,
             ...(mappedUserId ? { userId: mappedUserId } : {}),

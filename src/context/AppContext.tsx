@@ -213,6 +213,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [trades, setTrades] = useState<Trade[]>(() => loadState('trades', initialTrades));
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => loadState('tickets', initialSupportTickets));
 
+  // Realtime callbacks are subscribed once; refs keep their identity recovery inputs current.
+  const usersRef = useRef(users);
+  const tradesRef = useRef(trades);
+  const supportTicketsRef = useRef(supportTickets);
+  useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => { tradesRef.current = trades; }, [trades]);
+  useEffect(() => { supportTicketsRef.current = supportTickets; }, [supportTickets]);
+
   // Support conversations are stored and synchronized through Firebase only.
   // Firestore rejects undefined values, so omit optional fields before saving.
   const removeUndefinedSupportValues = (value: any): any => {
@@ -629,13 +637,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const normalizeFirebaseUser = (
     value: any,
-    tradeHistory: Trade[] = trades,
-    ticketHistory: SupportTicket[] = supportTickets
+    tradeHistory: Trade[] = tradesRef.current,
+    ticketHistory: SupportTicket[] = supportTicketsRef.current
   ): User => {
     const id = String(value?.id || value?.userId || '');
     const emailKey = String(value?.email || '').trim().toLowerCase();
     const uidKey = String(value?.uid || '');
-    const localProfile = users.find((user) =>
+    const localProfile = usersRef.current.find((user) =>
       (id && user.id === id) ||
       (emailKey && String(user.email || '').trim().toLowerCase() === emailKey) ||
       (uidKey && String(user.uid || '') === uidKey)
@@ -689,11 +697,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const normalizeSupportTicket = (value: any): SupportTicket => {
     const userId = String(value?.userId || '');
     const emailKey = String(value?.userEmail || '').trim().toLowerCase();
-    const profile = users.find((user) =>
+    const profile = usersRef.current.find((user) =>
       user.id === userId ||
       (emailKey && String(user.email || '').trim().toLowerCase() === emailKey)
     );
-    const relatedTrade = trades
+    const relatedTrade = tradesRef.current
       .filter((trade) => trade.userId === userId && hasUsableCustomerLabel(trade.userName))
       .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime())[0];
     const userMessageSender = Array.isArray(value?.messages)

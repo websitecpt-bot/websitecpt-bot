@@ -92,9 +92,9 @@ export const AdminSupportTab: React.FC = () => {
   const filteredTickets = statusFilteredTickets.filter((t) => {
     const q = searchQuery.toLowerCase();
     return (
-      t.userName.toLowerCase().includes(q) ||
-      t.userEmail.toLowerCase().includes(q) ||
-      (t.lastMessage && t.lastMessage.toLowerCase().includes(q))
+      String(t.userName || '').toLowerCase().includes(q) ||
+      String(t.userEmail || '').toLowerCase().includes(q) ||
+      String(t.lastMessage || '').toLowerCase().includes(q)
     );
   });
 
@@ -292,9 +292,9 @@ export const AdminSupportTab: React.FC = () => {
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-7 h-7 rounded-full bg-amber-500/15 text-amber-400 font-bold flex items-center justify-center text-xs shrink-0 border border-amber-500/30">
-                          {ticket.userName.charAt(0).toUpperCase()}
+                          {String(ticket.userName || 'U').charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-bold text-white capitalize truncate">{ticket.userName}</span>
+                        <span className="font-bold text-white capitalize truncate">{ticket.userName || 'Unknown Customer'}</span>
                         {ticket.unreadAdminCount > 0 && (
                           <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
                         )}
@@ -315,7 +315,7 @@ export const AdminSupportTab: React.FC = () => {
                     </p>
 
                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-1.5 pl-9">
-                      <span className="truncate">{ticket.userEmail}</span>
+                      <span className="truncate">{ticket.userEmail || 'No email on file'}</span>
                       <span
                         className={`text-[9px] font-bold px-1.5 py-0.2 rounded capitalize ${
                           ticket.status === 'pending'
@@ -357,9 +357,9 @@ export const AdminSupportTab: React.FC = () => {
                   <div className="min-w-0">
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                       <h3 className="text-sm font-bold text-white capitalize break-words">
-                        {selectedTicket.userName}
+                        {selectedTicket.userName || 'Unknown Customer'}
                       </h3>
-                      <span className="max-w-full break-all text-[10px] sm:text-[11px] font-mono text-amber-400">({selectedTicket.userEmail})</span>
+                      <span className="max-w-full break-all text-[10px] sm:text-[11px] font-mono text-amber-400">({selectedTicket.userEmail || 'No email on file'})</span>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">User ID: {selectedTicket.userId}</span>
                   </div>

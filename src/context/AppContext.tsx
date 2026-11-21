@@ -56,7 +56,7 @@ import {
   supabaseAuthSignIn,
 } from '../lib/supabase';
 import { registerWithFirebase, loginOrMigrateWithFirebase } from '../lib/firebaseAuth';
-import { saveFirebaseDocument, deleteFirebaseDocument } from '../lib/firebaseData';
+import { saveFirebaseDocument, deleteFirebaseDocument, subscribeFirebaseCollection } from '../lib/firebaseData';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface AppContextType {
@@ -237,6 +237,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC');
   const [trades, setTrades] = useState<Trade[]>(() => loadState('trades', initialTrades));
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => loadState('tickets', initialSupportTickets));
+
+  // Support conversations are stored and synchronized through Firebase only.
+  const persistSupportTicket = async (ticket: SupportTicket): Promise<{ success: boolean; error?: string }> => {
+    if (!isFirebaseConfigured()) return { success: false, error: 'Firebase is not configured.' };
+    try {
+      await saveFirebaseDocument('supportTickets', ticket.id, ticket);
+      return { success: true };
+    } catch (error) {
+      console.error('[Firebase Support] Save failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Firebase save failed.' };
+    }
+  };
   const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>(() => loadState('adjustments', initialBalanceAdjustments));
   const [depositRequests, setDepositRequests] = useState<DepositRequest[]>(() => loadState('deposits', initialDepositRequests));
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>(() => loadState('withdrawals', initialWithdrawalRequests));
@@ -353,7 +365,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next.sort((a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime());
     });
     if (isSupabaseConfigured()) {
-      const result = await syncTicketToSupabase(agreementTicket);
+      const result = await persistSupportTicket(agreementTicket);
       if (!result.success) throw new Error(`Agreement saved on this device, but cloud sync failed: ${result.error || 'Please contact Support.'}`);
     }
 
@@ -405,7 +417,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setSupportTickets((previous) => previous.map((ticket) => ticket.id === targetTicket.id ? updatedTicket : ticket));
     if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
+      void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Agreement] Admin status was not saved to cloud:', result.error);
       });
     }
@@ -600,7 +612,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Central Supabase Cloud Sync & Realtime Listener
-  const hydrateFromSupabase = async (includeTickets = true) => {
+  const hydrateFromSupabase = async () => {
     if (!isSupabaseConfigured()) return;
     try {
       // Fetch each data group independently. A timeout in the large support-chat
@@ -608,7 +620,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const results = await Promise.allSettled([
         fetchUsersFromSupabase(),
         fetchTradesFromSupabase(),
-        includeTickets ? fetchTicketsFromSupabase() : Promise.resolve(null),
+        Promise.resolve(null),
         fetchDepositsFromSupabase(),
         fetchWithdrawalsFromSupabase(),
         fetchAuditLogsFromSupabase(),
@@ -681,7 +693,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshAllFromSupabase = async () => {
     // Manual Admin Sync Now must also refresh the Support Inbox, not just core tables.
-    await hydrateFromSupabase(true);
+    await hydrateFromSupabase();
   };
 
   useEffect(() => {
@@ -779,11 +791,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       isMounted = false;
       clearInterval(pollTimer);
-      clearInterval(ticketPollTimer);
+
       if (channel) {
         channel.unsubscribe();
       }
     };
+  }, []);
+
+  // Firebase Realtime listener: both customer and admin clients receive the same inbox updates.
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return;
+    const unsubscribe = subscribeFirebaseCollection<SupportTicket>(
+      'supportTickets',
+      (tickets) => {
+        const sorted = tickets.sort(
+          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime()
+        );
+        setSupportTickets(sorted);
+      },
+      (error) => console.error('[Firebase Support] Realtime listener failed:', error)
+    );
+    return () => unsubscribe();
   }, []);
 
   // Live Binance Price Feed (Zero-lag accurate real-world rates for major crypto coins)
@@ -1218,7 +1246,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     let welcomeTicketSaved = !isSupabaseConfigured();
     if (isSupabaseConfigured()) {
-      const ticketSave = await syncTicketToSupabase(welcomeTicket);
+      const ticketSave = await persistSupportTicket(welcomeTicket);
       welcomeTicketSaved = ticketSave.success;
       if (!ticketSave.success) {
         console.error('[Registration welcome ticket sync failed]', ticketSave.error);
@@ -1812,7 +1840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
     if (isSupabaseConfigured()) {
-      const save = await syncTicketToSupabase(updatedTicket);
+      const save = await persistSupportTicket(updatedTicket);
       if (!save.success) {
         console.error('[Support] User message cloud save failed:', save.error);
         return { success: false, message: `Message was not sent because cloud saving failed. ${save.error || ''}`.trim() };
@@ -1857,9 +1885,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isSupabaseConfigured()) {
       const saves = await Promise.all([
         ...previouslyOpen.map((ticket) =>
-          syncTicketToSupabase({ ...ticket, status: 'closed', isSessionClosed: true })
+          persistSupportTicket({ ...ticket, status: 'closed', isSessionClosed: true })
         ),
-        syncTicketToSupabase(newTicket),
+        persistSupportTicket(newTicket),
       ]);
       const failed = saves.find((result) => !result.success);
       if (failed) {
@@ -1899,7 +1927,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     const targetTicket = supportTickets.find((t) => t.id === ticketId);
     if (targetTicket && isSupabaseConfigured()) {
-      syncTicketToSupabase({ ...targetTicket, status: 'closed', isSessionClosed: true }).catch((e) => console.warn('Close ticket sync notice:', e));
+      persistSupportTicket({ ...targetTicket, status: 'closed', isSessionClosed: true }).catch((e) => console.warn('Close ticket sync notice:', e));
     }
     logAuditAction(
       'SUPPORT_SESSION_CLOSED',
@@ -1920,7 +1948,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
     if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updated).then((result) => {
+      void persistSupportTicket(updated).then((result) => {
         if (!result.success) console.error('[Support] Reopened ticket was not saved:', result.error);
       });
     }
@@ -1930,7 +1958,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetTicket = supportTickets.find((ticket) => ticket.id === ticketId);
     setSupportTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId));
     if (isSupabaseConfigured()) {
-      void deleteSupportTicketFromSupabase(ticketId).then((result) => {
+      void deleteFirebaseDocument('supportTickets', ticketId).then((result) => {
         if (!result.success) console.error('[Support] Ticket deletion was not saved:', result.error);
       });
     }
@@ -1951,7 +1979,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
         const updatedTicket = { ...t, messages: updatedMsgs };
         if (isSupabaseConfigured()) {
-          syncTicketToSupabase(updatedTicket).catch((e) => console.warn('Edit msg sync notice:', e));
+          persistSupportTicket(updatedTicket).catch((e) => console.warn('Edit msg sync notice:', e));
         }
         return updatedTicket;
       })
@@ -1975,7 +2003,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
         const updatedTicket = { ...t, messages: updatedMsgs };
         if (isSupabaseConfigured()) {
-          syncTicketToSupabase(updatedTicket).catch((e) => console.warn('Delete msg sync notice:', e));
+          persistSupportTicket(updatedTicket).catch((e) => console.warn('Delete msg sync notice:', e));
         }
         return updatedTicket;
       })
@@ -2023,7 +2051,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     if (isSupabaseConfigured()) {
-      const save = await syncTicketToSupabase(updatedTicket);
+      const save = await persistSupportTicket(updatedTicket);
       if (!save.success) {
         console.error('[Support] Admin reply cloud save failed:', save.error);
         return { success: false, message: `Reply was not sent because cloud saving failed. ${save.error || ''}`.trim() };
@@ -2076,7 +2104,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
+      void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Support] System notification was not saved:', result.error);
       });
     }
@@ -2098,7 +2126,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setSupportTickets((prev) => prev.map((ticket) => ticket.id === ticketId ? updated : ticket));
     if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updated).then((result) => {
+      void persistSupportTicket(updated).then((result) => {
         if (!result.success) console.error('[Support] Ticket status was not saved:', result.error);
       });
     }
@@ -2115,7 +2143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     if (isSupabaseConfigured()) {
       unreadTickets.forEach((ticket) => {
-        void syncTicketToSupabase({ ...ticket, unreadUserCount: 0 }).then((result) => {
+        void persistSupportTicket({ ...ticket, unreadUserCount: 0 }).then((result) => {
           if (!result.success) console.error('[Support] Read status was not saved:', result.error);
         });
       });
@@ -2188,7 +2216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (isSupabaseConfigured()) {
-      void syncTicketToSupabase(updatedTicket).then((result) => {
+      void persistSupportTicket(updatedTicket).then((result) => {
         if (!result.success) console.error('[Support] Customer Support visit was not saved:', result.error);
       });
     }
